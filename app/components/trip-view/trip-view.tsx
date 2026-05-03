@@ -14,6 +14,7 @@ import type { Feature, FeatureCollection } from "geojson";
 import type { Trip } from "@/lib/types";
 import { buildCaliforniaMask } from "@/app/components/map/buildMask";
 import { extractRouteFeatures } from "./helpers/route";
+import { shouldDoInitialFly } from "./helpers/auto-advance";
 import { useTripView } from "./hook";
 import SpeechBubble from "./speech-bubble";
 import DayRail from "./day-rail";
@@ -127,12 +128,19 @@ export default function TripView({ trip }: TripViewProps) {
 
   // Initial fly to the first session, once the map is ready
   useEffect(() => {
-    if (!mapReady || hasInitialFlownRef.current) return;
-    const first = flatSessions[0]?.session;
-    if (!first?.spot_coords) return;
+    const firstCoords = flatSessions[0]?.session?.spot_coords;
+    if (
+      !shouldDoInitialFly({
+        mapReady,
+        hasFlown: hasInitialFlownRef.current,
+        firstSessionCoords: firstCoords,
+      })
+    ) {
+      return;
+    }
     hasInitialFlownRef.current = true;
     setIs3D(true);
-    flyToCoords(first.spot_coords, 60);
+    flyToCoords(firstCoords, 60);
   }, [mapReady, flatSessions, flyToCoords]);
 
   const handleToggle3D = useCallback(() => {

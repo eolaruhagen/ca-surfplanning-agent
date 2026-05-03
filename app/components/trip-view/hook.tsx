@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Trip, TripDay, Session } from "@/lib/types";
+import { AUTO_ADVANCE_INTERVAL_MS, advanceTick } from "./helpers/auto-advance";
 
 export type FlatSession = {
   session: Session;
@@ -99,12 +100,11 @@ export function useTripView(trip: Trip): UseTripViewReturn {
     }
     intervalRef.current = setInterval(() => {
       setCurrentIndex((i) => {
-        if (i < total - 1) return i + 1;
-        // Stop at end
-        setIsPlaying(false);
-        return i;
+        const tick = advanceTick(i, total);
+        if (tick.shouldPause) setIsPlaying(false);
+        return tick.nextIndex;
       });
-    }, 4500);
+    }, AUTO_ADVANCE_INTERVAL_MS);
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
