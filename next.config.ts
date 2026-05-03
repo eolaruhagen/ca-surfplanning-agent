@@ -11,6 +11,10 @@ const nextConfig: NextConfig = {
       './node_modules/open-meteo-mcp-server/**',
       './node_modules/@modelcontextprotocol/server-google-maps/**',
       './node_modules/@modelcontextprotocol/server-filesystem/**',
+      // The MCP server packages import @modelcontextprotocol/sdk at runtime —
+      // they aren't `import`ed by our code so Next won't bundle the SDK
+      // package alongside them without an explicit trace.
+      './node_modules/@modelcontextprotocol/sdk/**',
       './node_modules/.bin/open-meteo-mcp-server',
       './node_modules/.bin/mcp-server-google-maps',
       './node_modules/.bin/mcp-server-filesystem',
@@ -19,6 +23,10 @@ const nextConfig: NextConfig = {
       './node_modules/open-meteo-mcp-server/**',
       './node_modules/@modelcontextprotocol/server-google-maps/**',
       './node_modules/@modelcontextprotocol/server-filesystem/**',
+      // The MCP server packages import @modelcontextprotocol/sdk at runtime —
+      // they aren't `import`ed by our code so Next won't bundle the SDK
+      // package alongside them without an explicit trace.
+      './node_modules/@modelcontextprotocol/sdk/**',
       './node_modules/.bin/open-meteo-mcp-server',
       './node_modules/.bin/mcp-server-google-maps',
       './node_modules/.bin/mcp-server-filesystem',

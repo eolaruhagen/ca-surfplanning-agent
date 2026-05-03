@@ -60,10 +60,23 @@ export async function getMapsMcp() {
   });
 }
 
+// Match narrator's EXPORTS_DIR resolution so the MCP root + the agent's
+// hardcoded paths line up (Vercel: /tmp/exports, local: ./exports).
+const EXPORTS_DIR =
+  process.env.TRIP_EXPORTS_DIR ??
+  (process.env.VERCEL ? '/tmp/exports' : './exports');
+
 export async function getFilesystemMcp() {
+  // Ensure the dir exists before the MCP server tries to chdir into it.
+  try {
+    const fs = await import('node:fs');
+    fs.mkdirSync(EXPORTS_DIR, { recursive: true });
+  } catch {
+    /* ignore — narrator also mkdirs */
+  }
   return connect({
     name: 'surftrip-filesystem',
     bin: 'mcp-server-filesystem',
-    args: ['./exports'],
+    args: [EXPORTS_DIR],
   });
 }

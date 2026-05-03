@@ -7,7 +7,11 @@ import { narratorToolset } from '@/lib/tools';
 import { newRecordedPlan } from '@/lib/tools/record';
 import { runAgent } from './runner';
 
-const EXPORTS_DIR = path.resolve(process.cwd(), 'exports');
+// Vercel function fs is read-only except /tmp; locally we want the project's
+// exports/ dir. Backend may override via TRIP_EXPORTS_DIR.
+const EXPORTS_DIR =
+  process.env.TRIP_EXPORTS_DIR ??
+  (process.env.VERCEL ? '/tmp/exports' : path.resolve(process.cwd(), 'exports'));
 
 function buildSystemPrompt(exportsDir: string): string {
   return `You are the Narrator agent on a four-agent California surf trip planning team.
