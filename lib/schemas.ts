@@ -194,6 +194,18 @@ export const AgentNameSchema = z.enum([
   'narrator',
 ]);
 
+/**
+ * Inter-agent message kind. `'handoff'` is the default at phase boundaries.
+ * `'question'` and `'answer'` pair via `correlation_id` inside a consultation.
+ * `'note'` is a one-way side comment from one agent to another.
+ */
+export const ConsultationKindSchema = z.enum([
+  'handoff',
+  'question',
+  'answer',
+  'note',
+]);
+
 export const StreamEventSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('phase'),
@@ -214,6 +226,27 @@ export const StreamEventSchema = z.discriminatedUnion('type', [
     from: AgentNameSchema,
     to: AgentNameSchema,
     content: z.string(),
+    /**
+     * Optional. Defaults to 'handoff' semantically when absent. 'question' and
+     * 'answer' pair via correlation_id inside a consultation thread.
+     */
+    kind: ConsultationKindSchema.optional(),
+    /** Optional. Pairs question + answer messages inside a consultation. */
+    correlation_id: z.string().optional(),
+  }),
+  z.object({
+    type: z.literal('consultation_start'),
+    initiator: AgentNameSchema,
+    consultee: AgentNameSchema,
+    correlation_id: z.string(),
+    topic: z.string(),
+  }),
+  z.object({
+    type: z.literal('consultation_end'),
+    initiator: AgentNameSchema,
+    consultee: AgentNameSchema,
+    correlation_id: z.string(),
+    summary: z.string(),
   }),
   z.object({
     type: z.literal('agent_thinking'),

@@ -13,7 +13,7 @@ Two Claude Code sessions are working this repo concurrently. This file is the sh
 ## Decisions (locked, don't relitigate)
 
 - **Multi-agent collaborative operation** (overrides ARCHITECTURE.md principle #10's old "single-agent first" guidance). Four agents — `vision → recon → planner → narrator` — hand off in sequence with visible inter-agent messages. UI must render as a *collaboration between named agents*, not an opaque spinner. See ARCHITECTURE.md §"Multi-agent collaborative operation" for the full surface area.
-- **TDD via the `superpowers:test-driven-development` skill** is mandatory for non-trivial changes (new tools, agents, hooks, parsers, scoring, route handlers). See `CLAUDE.md`. Tests run via `npm test`; the suite is currently 44 unit + 5 live-API integration.
+- **TDD via the `superpowers:test-driven-development` skill** is mandatory for non-trivial changes (new tools, agents, hooks, parsers, scoring, route handlers). See `CLAUDE.md`. Tests run via `npm test`; the suite is currently 125 unit + 5 live-API integration.
 - **Custom React hooks with testable state co-located next to components**: `app/components/<feature>/{component.tsx, hook.tsx, hook.test.tsx}`. UI agent: state-bearing logic must live in `hook.tsx`, not inline in `component.tsx`. Hook tests are mandatory if the hook owns state. See `CLAUDE.md`.
 - **Rate-limited tool calling** is enforced server-side per `runPlanTrip` invocation via `lib/rate-limiter.ts`. Defaults: Google Maps MCP capped at 25 calls, Open-Meteo MCP at 80, filesystem MCP at 20, total 200. Limits are enforced by the MCP adapter; agents see rate-limit rejections as tool errors and adapt.
 - **Integration tests gated by `SURFPLANNER_INTEGRATION=1`** (run via `npm run test:integration`). Hits live NOAA tides, NDBC buoys, and Open-Meteo. Don't run in pre-push if you'd rather stay hermetic — `npm test` covers unit + parsers + adapter without network.
@@ -25,10 +25,12 @@ Two Claude Code sessions are working this repo concurrently. This file is the sh
 - **Long-running planner uses Vercel Workflows** so each step gets its own 60s function clock on Hobby. `lib/workflows/**`.
 - **Mapbox `pk.eyJ...` is intentionally public** (`NEXT_PUBLIC_*`). Do NOT scan-block it. The genuinely-secret tokens are AI Gateway (`vck_`), Google Maps (`AIza...`), Anthropic (`sk-ant-`) if anyone re-adds it, and KV/Upstash tokens.
 - **Components directory is `app/components/`**, not project-root `components/`.
+- **Bidirectional agent consultation** is live. The planner gets a `consult_agent` tool with a **3-call budget per run** (`lib/consultation-budget.ts`). Mini-runs use a constrained, read-only tool set (no `record_*`, no `write_file`) and cap at `stepCountIs(5)`. Implementation: `lib/agents/consultation.ts`, `lib/tools/consult.ts`. Event sequence: `agent_message(kind=question)` → `consultation_start` → consultee events → `consultation_end` → `agent_message(kind=answer)`, all sharing a `correlation_id`. See "Bidirectional consultation pattern" below for the spec.
+- **Inter-agent handoff summarization** at recon → planner and planner → narrator boundaries (`lib/agents/handoff.ts`, `summarizeForHandoff(text, maxChars=4000)`). Big agent reports are head + tail truncated so the next agent's prompt stays bounded.
 
 ## Contracts in flight
 
-- _2026-05-03 @Backend_: **Bidirectional agent consultation** going in next. SSE event spec is locked above (see "Bidirectional consultation pattern"). `consult_agent` tool will be added to the planner (and likely narrator) with a 3-call budget per run. Schema additions: `agent_message.kind` + `agent_message.correlation_id`, plus `consultation_start` / `consultation_end` event types. Backend is also adding agent safety guards (handoff summarization for large contexts, infinite-loop caps, agent-side rate-limit response handling) with unit tests. UI can already wire renderers for the new events — they just won't fire until backend ships.
+_None right now._
 
 ## API contract (locked surface for UI agent)
 
@@ -78,7 +80,7 @@ The route returns `text/event-stream`. Each event is a JSON-serialized `StreamEv
 
 #### SSE event reference
 
-Every entry below is a variant of `StreamEventSchema`'s discriminated union on `type`. Events marked **(NEW — bidirectional)** are reserved for the consultation pattern and not yet emitted; spec'd here so UI can render them when they go live.
+Every entry below is a variant of `StreamEventSchema`'s discriminated union on `type`. The bidirectional consultation events (`consultation_start`, `consultation_end`, plus `agent_message` with `kind='question'`/`'answer'` and a shared `correlation_id`) are live — see "Bidirectional consultation pattern" below.
 
 | Event | Payload | When fired | UI rendering hint |
 |---|---|---|---|
@@ -91,8 +93,8 @@ Every entry below is a variant of `StreamEventSchema`'s discriminated union on `
 | `tool_result` | `{ agent, name, summary: string }` (summary ≤120 chars) | Immediately after tool execute returns | Compact result line. Collapse adjacent tool_call → tool_result pairs into one expandable row when feed gets dense. |
 | `data_observed` | `{ agent, kind, summary, spot_id?, score? }`. `kind`: `'spot' \| 'forecast' \| 'route' \| 'tide' \| 'buoy' \| 'place'` | When a tool returns a noteworthy domain object (forecast, score, route segment) | Compact callout/chip. `spot_id` lets the live feed cross-link to a map pin (hover/click pulses the pin). `score` can render as a tiny bar. |
 | `vision_progress` | `{ board_index: number, board: BoardProfile }` | Once per board after vision identifies it | Board card flips from "identifying…" to the result; grid layout works well |
-| `consultation_start` **(NEW — bidirectional)** | `{ initiator: AgentName, consultee: AgentName, correlation_id: string, topic: string }` | When one agent invokes the `consult_agent` tool against another | Open an indented sub-thread. Visually frame everything until matching `consultation_end` as nested under this consultation. |
-| `consultation_end` **(NEW — bidirectional)** | `{ initiator, consultee, correlation_id, summary: string }` | When the consulted agent finishes its focused mini-run | Close the indent. The matching `agent_message kind='answer'` follows immediately. |
+| `consultation_start` | `{ initiator: AgentName, consultee: AgentName, correlation_id: string, topic: string }` | When one agent invokes the `consult_agent` tool against another | Open an indented sub-thread. Visually frame everything until matching `consultation_end` as nested under this consultation. |
+| `consultation_end` | `{ initiator, consultee, correlation_id, summary: string }` | When the consulted agent finishes its focused mini-run | Close the indent. The matching `agent_message kind='answer'` follows immediately. |
 | `day_complete` | `{ day: TripDay }` | After `record_overnight` is called on a day that already has at least one session | Day card preview — pin the day to the trip view as it lands; lets the user watch the itinerary build |
 | `done` | `{ trip_id: string, trip: Trip }` | Pipeline terminal success; stream closes immediately after | Navigate to `/t/{trip_id}` or render the Trip view inline |
 | `error` | `{ agent?: AgentName, message: string }` | On exception inside any agent or workflow step | Inline error message; if `agent` set, attribute it to that lane (don't take down the whole UI) |
@@ -242,6 +244,8 @@ Reads `kv.get<Trip>('trip:' + id)`. Returns the `Trip` JSON or 404.
 
 ## Recently shipped
 
+- _2026-05-03 @Backend_: **Bidirectional agent consultation shipped.** Planner now has `consult_agent(consultee, topic, question)` with a **3-call budget per run** (`ConsultationBudget` in `lib/consultation-budget.ts`). Consultee runs as a focused mini-agent (`lib/agents/consultation.ts`) with `stepCountIs(5)` and a read-only tool set (no `record_*`, no `write_file`). Event sequence wired exactly as spec'd: `agent_message(question)` → `consultation_start` → consultee events → `consultation_end` → `agent_message(answer)`, all sharing a `correlation_id`. Schema additions: `agent_message.kind` (`'handoff' | 'question' | 'answer' | 'note'`) + `agent_message.correlation_id`, plus `consultation_start` / `consultation_end` event variants. UI: the events are now firing on real runs — wire renderers per the doc's "Bidirectional consultation pattern" section. Tests: +27 (`tests/{handoff,consultation-budget,consultation-events,schemas-consultation,agent-step-cap,rate-limit-loop}.test.ts`).
+- _2026-05-03 @Backend_: **Agent safety guards.** `summarizeForHandoff(text, 4000)` (`lib/agents/handoff.ts`) applied at recon → planner and planner → narrator handoffs in both `orchestrator.ts` and `workflows/planTrip.ts` — keeps downstream prompts bounded. Step-cap test pins recon=18 / planner=30 caps as a regression. Rate-limit-saturation test confirms a saturated `RateLimiter` makes adapter calls degrade to error returns (no recursion, no infinite loop). `runAgent` now exposes a `streamTextImpl` test seam so the cap can be inspected without mocking the AI SDK globally.
 - _2026-05-03 @Backend_: **`pick_reason` on every Session** (≤160 chars, mandatory), plus `spot_coords` resolved server-side from `spots.json` before save. UI: use `pick_reason` as the headline when animating spot-by-spot. `route_geojson` now ships per-session `Point` features with real coords + `pick_reason` + `fit_score` + `board_id` in `properties` — one click handler has everything.
 - _2026-05-03 @Backend_: **Curated model dropdown contract** — `SURF_PLANNER_MODELS` (runtime const) + `SurfPlannerModel` (TS type) in `@/lib/types`, derived from `@ai-sdk/gateway`'s `GatewayModelId`. UI dropdown imports both for typed-in-sync UX. Optional `model` field on `PlanRequest`; server defaults to Sonnet 4.6.
 - _2026-05-03 @Backend_: **Real Vercel Workflow wired** — `lib/workflows/planTrip.ts` now uses `'use workflow'` + `'use step'` (4 steps: vision, recon, planner, narrate-and-save) with `getWritable<StreamEvent>()` for SSE. `next.config.ts` wrapped with `withWorkflow`. Route handler picks workflow path when `USE_WORKFLOWS=1`, else inline orchestrator (default for local dev). Each workflow step gets its own Vercel function clock — bypasses the 60s Hobby cap.

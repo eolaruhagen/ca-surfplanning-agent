@@ -8,6 +8,7 @@ import { runVisionAgent } from './vision';
 import { runReconAgent } from './recon';
 import { runPlannerAgent } from './planner';
 import { runNarratorAgent } from './narrator';
+import { summarizeForHandoff } from './handoff';
 
 export type McpClients = {
   meteo: Client | null;
@@ -54,31 +55,36 @@ export async function runPlanTrip(opts: {
     model,
   });
 
-  // Handoff recon → planner
+  // Handoff recon → planner (summarized to keep planner's prompt bounded)
+  const reconHandoff = summarizeForHandoff(recon.text);
   sendEvent({
     type: 'agent_message',
     from: 'recon',
     to: 'planner',
-    content: recon.text,
+    content: reconHandoff,
+    kind: 'handoff',
   });
 
   // Phase 3: Planning
   const planning = await runPlannerAgent({
     params: input.params,
     boards,
-    reconReport: recon.text,
+    reconReport: reconHandoff,
     mapsMcp: mcpClients.maps,
+    meteoMcp: mcpClients.meteo,
     sendEvent,
     rateLimiter,
     model,
   });
 
-  // Handoff planner → narrator
+  // Handoff planner → narrator (summarized)
+  const plannerHandoff = summarizeForHandoff(planning.text);
   sendEvent({
     type: 'agent_message',
     from: 'planner',
     to: 'narrator',
-    content: planning.text,
+    content: plannerHandoff,
+    kind: 'handoff',
   });
 
   // Phase 4: Narration + Export

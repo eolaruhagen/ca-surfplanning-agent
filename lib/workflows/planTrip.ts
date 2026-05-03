@@ -28,6 +28,7 @@ import { runVisionAgent } from '@/lib/agents/vision';
 import { runReconAgent } from '@/lib/agents/recon';
 import { runPlannerAgent } from '@/lib/agents/planner';
 import { runNarratorAgent } from '@/lib/agents/narrator';
+import { summarizeForHandoff } from '@/lib/agents/handoff';
 import type {
   BoardProfile,
   PlanRequest,
@@ -91,13 +92,15 @@ async function reconStep(input: PlanRequest, boards: BoardProfile[]): Promise<{ 
       rateLimiter,
       model,
     });
+    const handoff = summarizeForHandoff(result.text);
     sendEvent({
       type: 'agent_message',
       from: 'recon',
       to: 'planner',
-      content: result.text,
+      content: handoff,
+      kind: 'handoff',
     });
-    return result;
+    return { text: handoff };
   } finally {
     await meteoMcp?.close().catch(() => {});
   }
@@ -113,6 +116,7 @@ async function plannerStep(
   'use step';
   const sendEvent = makeSendEvent();
   const mapsMcp = await safeMcp(getMapsMcp);
+  const meteoMcp = await safeMcp(getOpenMeteoMcp);
   const rateLimiter = new RateLimiter();
   const model = input.model ?? DEFAULT_MODEL;
   try {
@@ -121,19 +125,23 @@ async function plannerStep(
       boards,
       reconReport,
       mapsMcp,
+      meteoMcp,
       sendEvent,
       rateLimiter,
       model,
     });
+    const handoff = summarizeForHandoff(result.text);
     sendEvent({
       type: 'agent_message',
       from: 'planner',
       to: 'narrator',
-      content: result.text,
+      content: handoff,
+      kind: 'handoff',
     });
-    return { text: result.text, days: result.days };
+    return { text: handoff, days: result.days };
   } finally {
     await mapsMcp?.close().catch(() => {});
+    await meteoMcp?.close().catch(() => {});
   }
 }
 

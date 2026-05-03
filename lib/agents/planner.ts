@@ -3,6 +3,7 @@ import type { BoardProfile, SendEvent, TripDay, TripParams } from '@/lib/types';
 import type { RateLimiter } from '@/lib/rate-limiter';
 import { plannerToolset } from '@/lib/tools';
 import { newRecordedPlan, plannedDays, type RecordedPlan } from '@/lib/tools/record';
+import { ConsultationBudget } from '@/lib/consultation-budget';
 import { runAgent } from './runner';
 
 const SYSTEM_PROMPT = `You are the Planner agent on a four-agent California surf trip planning team.
@@ -18,6 +19,7 @@ Use these tools:
 - record_session — commit a session to the itinerary; call once per session in chronological order
 - record_overnight — record where the user sleeps after each non-final day
 - record_drive — record drive time + distance from a day's last spot to the next day's first spot
+- consult_agent — ask the recon agent a focused question (skill safety, condition sanity check) or the narrator for tone advice. You have a small budget per run (default 3) — use it sparingly for genuinely uncertain calls, not for routine lookups
 
 Procedure:
 1. Read the Recon report. Pick the strongest sessions_per_day combinations for each trip day, biased toward the peak day(s) Recon flagged.
@@ -38,13 +40,17 @@ export async function runPlannerAgent(opts: {
   boards: BoardProfile[];
   reconReport: string;
   mapsMcp: Client | null;
+  /** For consult_agent → recon: lets the consultee call open-meteo if needed. */
+  meteoMcp?: Client | null;
   sendEvent: SendEvent;
   rateLimiter?: RateLimiter;
+  consultationBudget?: ConsultationBudget;
   model?: string;
   maxSteps?: number;
 }): Promise<{ text: string; days: TripDay[]; plan: RecordedPlan }> {
   const { params, boards, reconReport, sendEvent } = opts;
   const plan = newRecordedPlan();
+  const consultationBudget = opts.consultationBudget ?? new ConsultationBudget(3);
 
   sendEvent({ type: 'phase', phase: 'planning' });
   sendEvent({
@@ -57,10 +63,12 @@ export async function runPlannerAgent(opts: {
     agent: 'planner',
     sendEvent,
     plan,
-    meteoMcp: null,
+    meteoMcp: opts.meteoMcp ?? null,
     mapsMcp: opts.mapsMcp,
     fsMcp: null,
     rateLimiter: opts.rateLimiter,
+    consultationBudget,
+    model: opts.model,
   });
 
   const prompt = [

@@ -7,7 +7,9 @@ import { recordTools, type RecordedPlan } from './record';
 import { tideTools } from './tides';
 import { buoyTools } from './buoys';
 import { mcpToolsForAgent, type McpToolBundle } from './mcp-adapter';
+import { consultTools } from './consult';
 import type { RateLimiter } from '@/lib/rate-limiter';
+import type { ConsultationBudget } from '@/lib/consultation-budget';
 
 export type AgentToolContext = {
   agent: AgentName;
@@ -17,6 +19,10 @@ export type AgentToolContext = {
   mapsMcp: Client | null;
   fsMcp: Client | null;
   rateLimiter?: RateLimiter;
+  /** Per-run cap on outbound `consult_agent` calls — passed to the planner. */
+  consultationBudget?: ConsultationBudget;
+  /** Model used by spawned consultee mini-runs. */
+  model?: string;
 };
 
 export async function reconToolset(ctx: AgentToolContext): Promise<ToolSet> {
@@ -47,10 +53,21 @@ export async function plannerToolset(ctx: AgentToolContext): Promise<ToolSet> {
         ctx.rateLimiter,
       )
     : ({} as ToolSet);
+  const consult = ctx.consultationBudget
+    ? consultTools({
+        initiator: ctx.agent,
+        budget: ctx.consultationBudget,
+        sendEvent: ctx.sendEvent,
+        mcpClients: { meteoMcp: ctx.meteoMcp },
+        rateLimiter: ctx.rateLimiter,
+        model: ctx.model,
+      })
+    : ({} as ToolSet);
   return {
     ...spotTools(ctx.agent, ctx.sendEvent),
     ...recordTools(ctx.agent, ctx.sendEvent, ctx.plan),
     ...mapsTools,
+    ...consult,
   };
 }
 

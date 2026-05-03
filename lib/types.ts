@@ -18,6 +18,7 @@ import type {
   ConfidenceSchema,
   AgentNameSchema,
   PlannerModelSchema,
+  ConsultationKindSchema,
 } from './schemas';
 export { SURF_PLANNER_MODELS } from './schemas';
 
@@ -49,6 +50,7 @@ export type StreamEvent = z.infer<typeof StreamEventSchema>;
 export type Phase = z.infer<typeof PhaseSchema>;
 export type Confidence = z.infer<typeof ConfidenceSchema>;
 export type AgentName = z.infer<typeof AgentNameSchema>;
+export type ConsultationKind = z.infer<typeof ConsultationKindSchema>;
 
 export type ToolResult<T> = { ok: true; data: T } | { ok: false; error: string };
 

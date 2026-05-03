@@ -3,6 +3,13 @@ import type { AgentName, SendEvent } from '@/lib/types';
 
 export const DEFAULT_MODEL = 'anthropic/claude-sonnet-4.6';
 
+/**
+ * Test-only seam. The real `streamText` lives on the AI SDK; tests can pass
+ * a shim that records the args (notably `stopWhen`) and returns a fake
+ * stream so we can assert the hard step cap is applied.
+ */
+export type StreamTextLike = typeof streamText;
+
 export async function runAgent(opts: {
   agent: AgentName;
   model?: string;
@@ -11,11 +18,14 @@ export async function runAgent(opts: {
   tools: ToolSet;
   maxSteps: number;
   sendEvent: SendEvent;
+  /** Optional override for tests. Defaults to the real `streamText`. */
+  streamTextImpl?: StreamTextLike;
 }): Promise<{ text: string }> {
   const { agent, sendEvent } = opts;
+  const impl = opts.streamTextImpl ?? streamText;
 
   try {
-    const result = streamText({
+    const result = impl({
       model: opts.model ?? DEFAULT_MODEL,
       system: opts.system,
       prompt: opts.prompt,
