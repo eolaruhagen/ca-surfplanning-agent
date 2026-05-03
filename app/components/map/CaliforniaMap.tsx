@@ -1,19 +1,12 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Map as MapGL,
   Marker,
   NavigationControl,
   Source,
   Layer,
-  type MapRef,
 } from "react-map-gl/mapbox";
 import type { Feature, FeatureCollection } from "geojson";
 
@@ -25,6 +18,7 @@ import {
 import { buildCaliforniaMask } from "./buildMask";
 import SpotList from "./SpotList";
 import SpotDetail from "./SpotDetail";
+import { useCaliforniaMap } from "./hook";
 
 /**
  * Public contract for CaliforniaMap.
@@ -78,21 +72,14 @@ export default function CaliforniaMap(props: CaliforniaMapProps) {
     header,
   } = props;
 
-  const mapRef = useRef<MapRef | null>(null);
-
   const [boundary, setBoundary] = useState<FeatureCollection | Feature | null>(
     null,
   );
   const [spots, setSpots] = useState<Spot[]>(spotsProp ?? []);
-  const [internalSelectedId, setInternalSelectedId] = useState<string | null>(
-    null,
-  );
   const [listOpen, setListOpen] = useState(true);
 
-  const isControlled = selectedSpotId !== undefined;
-  const effectiveSelectedId = isControlled
-    ? selectedSpotId
-    : internalSelectedId;
+  const { setMapRef, effectiveSelectedId, selectedSpot, handleSelect } =
+    useCaliforniaMap({ spots, selectedSpotId, onSpotSelect });
 
   // Load static data unless caller already provided spots.
   useEffect(() => {
@@ -115,27 +102,6 @@ export default function CaliforniaMap(props: CaliforniaMapProps) {
   const mask = useMemo(
     () => (boundary ? buildCaliforniaMask(boundary) : null),
     [boundary],
-  );
-
-  const selectedSpot =
-    spots.find((s) => s.id === effectiveSelectedId) ?? null;
-
-  const handleSelect = useCallback(
-    (id: string | null) => {
-      const spot = id ? spots.find((s) => s.id === id) ?? null : null;
-      if (!isControlled) setInternalSelectedId(id);
-      onSpotSelect?.(id, spot);
-
-      if (spot && mapRef.current) {
-        mapRef.current.flyTo({
-          center: [spot.lon, spot.lat],
-          zoom: Math.max(mapRef.current.getZoom?.() ?? 6, 11),
-          duration: 900,
-          essential: true,
-        });
-      }
-    },
-    [spots, isControlled, onSpotSelect],
   );
 
   const dimmed = useMemo(() => {
@@ -185,9 +151,7 @@ export default function CaliforniaMap(props: CaliforniaMapProps) {
 
       {/* Map */}
       <MapGL
-        ref={(r) => {
-          mapRef.current = r;
-        }}
+        ref={setMapRef}
         mapboxAccessToken={MAPBOX_TOKEN}
         initialViewState={INITIAL_VIEW}
         minZoom={5}
