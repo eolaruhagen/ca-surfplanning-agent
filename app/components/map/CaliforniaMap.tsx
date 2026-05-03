@@ -20,6 +20,7 @@ import { buildCaliforniaMask } from "./buildMask";
 import SpotList from "./SpotList";
 import SpotDetail from "./SpotDetail";
 import { useCaliforniaMap } from "./hook";
+import { clusterTripDays } from "./cluster-trip-days";
 
 /**
  * Public contract for CaliforniaMap.
@@ -130,6 +131,11 @@ export default function CaliforniaMap(props: CaliforniaMapProps) {
     for (const s of spots) m.set(s.id, s);
     return m;
   }, [spots]);
+
+  const clusteredTripDays = useMemo(
+    () => clusterTripDays(overlay?.tripDays ?? []),
+    [overlay?.tripDays],
+  );
 
   return (
     <div className="relative h-full w-full overflow-hidden">
@@ -288,16 +294,20 @@ export default function CaliforniaMap(props: CaliforniaMapProps) {
             );
           })}
 
-        {/* Day-stop markers — numbered dark circles for trip itinerary */}
-        {overlay?.tripDays?.map((td) => {
+        {/* Day-stop markers — numbered dark circles for trip itinerary.
+            When multiple days share the same spot, fan them around a small
+            ring so each number stays visible (see cluster-trip-days.ts). */}
+        {clusteredTripDays.map((td) => {
           const spot = spotById.get(td.spotId);
           if (!spot) return null;
+          const [dx, dy] = td.offset;
           return (
             <Marker
               key={`day-${td.dayIndex}-${td.spotId}`}
               longitude={spot.lon}
               latitude={spot.lat}
               anchor="center"
+              offset={[dx, dy]}
             >
               <div
                 className="day-stop-marker"
