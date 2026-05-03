@@ -26,8 +26,10 @@ describe('record_session', () => {
         time_window: '6:30 AM – 9:00 AM',
         spot_id: 'rincon',
         spot_name: 'Rincon',
+        spot_coords: [-119.48, 34.37],
         board_id: 'board-1',
-        reasoning: 'peak swell window',
+        pick_reason: 'Peak swell — 5ft @ 14s, light offshore',
+        reasoning: 'peak swell window matching shortboard ideal range',
         fit_score: 87,
       },
       { toolCallId: 't1', messages: [] },
@@ -36,6 +38,8 @@ describe('record_session', () => {
     assert.equal(days.length, 1);
     assert.equal(days[0].sessions.length, 1);
     assert.equal(days[0].sessions[0].fit_score, 87);
+    assert.equal(days[0].sessions[0].pick_reason, 'Peak swell — 5ft @ 14s, light offshore');
+    assert.deepEqual(days[0].sessions[0].spot_coords, [-119.48, 34.37]);
     const callEvent = events.find((e) => e.type === 'tool_call');
     const resultEvent = events.find((e) => e.type === 'tool_result');
     assert.ok(callEvent && resultEvent);
@@ -56,6 +60,7 @@ describe('record_overnight', () => {
         spot_id: 'steamer-lane',
         spot_name: 'Steamer Lane',
         board_id: 'b',
+        pick_reason: 'Clean morning at the Lane',
         reasoning: 'r',
         fit_score: 70,
       },

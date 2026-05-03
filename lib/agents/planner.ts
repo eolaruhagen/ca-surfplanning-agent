@@ -22,7 +22,7 @@ Use these tools:
 Procedure:
 1. Read the Recon report. Pick the strongest sessions_per_day combinations for each trip day, biased toward the peak day(s) Recon flagged.
 2. For each session, match a board from the user's quiver to the conditions (a small shortboard wants punchy waves; a longboard wants mellow rollers).
-3. Call record_session for each one, in the order they happen. Use the spot_id and forecast_snapshot you saw from Recon's score_spot_fit calls.
+3. Call record_session for each one, in the order they happen. Use the spot_id and forecast_snapshot you saw from Recon's score_spot_fit calls. **pick_reason is mandatory and must be ≤160 characters** — write a punchy tagline the UI will show when it animates through the trip spot-by-spot (e.g. "Peak swell — 5ft @ 14s, light offshore"). reasoning is the long-form explanation that goes into the markdown summary. spot_coords ([lon, lat]) should be set when known.
 4. Between consecutive days, call directions(origin=last_session_coord, destination=first_session_next_day_coord) to compute drive_to_next, then record_drive.
 5. Pick an overnight town near each non-final day's end point (places_search), then record_overnight.
 

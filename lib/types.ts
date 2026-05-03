@@ -1,4 +1,5 @@
 import type { z } from 'zod';
+import type { GatewayModelId } from '@ai-sdk/gateway';
 import type {
   SpotSchema,
   TripParamsSchema,
@@ -16,9 +17,21 @@ import type {
   PhaseSchema,
   ConfidenceSchema,
   AgentNameSchema,
+  PlannerModelSchema,
 } from './schemas';
+export { SURF_PLANNER_MODELS } from './schemas';
 
 export type { Spot, SkillLevel } from './spots';
+
+/**
+ * Strongly-typed model id usable with the Vercel AI Gateway. Re-exported
+ * from `@ai-sdk/gateway` so UI and API share the same union — no string
+ * drift between client dropdown and server runtime.
+ */
+export type { GatewayModelId };
+
+/** Curated subset shipped with this app — see lib/schemas.ts SURF_PLANNER_MODELS. */
+export type SurfPlannerModel = z.infer<typeof PlannerModelSchema>;
 
 export type SpotFromSchema = z.infer<typeof SpotSchema>;
 export type TripParams = z.infer<typeof TripParamsSchema>;

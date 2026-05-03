@@ -54,9 +54,35 @@ export const BoardInputSchema = z.object({
   photo_data_url: z.string(),
 });
 
+/**
+ * Curated subset of @ai-sdk/gateway's GatewayModelId that we know works for
+ * this planner. Both the UI dropdown and the API runtime parse against this
+ * union, so contracts stay in sync. To allow a model the SDK supports but
+ * we haven't curated, add it here — don't bypass.
+ */
+export const SURF_PLANNER_MODELS = [
+  'anthropic/claude-opus-4.7',
+  'anthropic/claude-opus-4.6',
+  'anthropic/claude-sonnet-4.6',
+  'anthropic/claude-sonnet-4.5',
+  'anthropic/claude-haiku-4.5',
+  'openai/gpt-5.2',
+  'openai/gpt-5.1-thinking',
+  'openai/gpt-5-mini',
+  'google/gemini-3-pro-preview',
+  'google/gemini-2.5-pro',
+] as const;
+
+export const PlannerModelSchema = z.enum(SURF_PLANNER_MODELS);
+
 export const PlanRequestSchema = z.object({
   params: TripParamsSchema,
   boards: z.array(BoardInputSchema).min(1).max(4),
+  /**
+   * Optional model override per request. Defaults to anthropic/claude-sonnet-4.6
+   * server-side. UI exposes a typed dropdown over SURF_PLANNER_MODELS.
+   */
+  model: PlannerModelSchema.optional(),
 });
 
 export const BoardTypeSchema = z.enum([
@@ -105,7 +131,18 @@ export const SessionSchema = z.object({
   time_window: z.string(),
   spot_id: z.string(),
   spot_name: z.string(),
+  spot_coords: z.tuple([z.number(), z.number()]).optional(),
   board_id: z.string(),
+  /**
+   * Short, animation-friendly tagline (≤120 chars) — what the UI shows when
+   * the trip is being walked through spot-by-spot. Always present; the
+   * planner is required to provide one.
+   */
+  pick_reason: z.string().min(1).max(160),
+  /**
+   * Long-form reasoning (no length cap) — feeds the markdown summary and
+   * detail panes. May restate context the pick_reason omits.
+   */
   reasoning: z.string(),
   forecast_snapshot: HourForecastSchema.partial(),
   fit_score: z.number(),

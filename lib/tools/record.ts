@@ -33,15 +33,24 @@ export function recordTools(
   return {
     record_session: tool({
       description:
-        'Confirm a planned surf session in the itinerary. Call once per session you commit to, in the order they should appear. fit_score must be the score returned by score_spot_fit.',
+        'Confirm a planned surf session in the itinerary. Call once per session you commit to, in chronological order. pick_reason MUST be a short, animation-friendly tagline (≤160 chars) — this is what the UI shows when it walks the user through the trip spot-by-spot. reasoning is the long-form explanation that feeds the markdown summary. fit_score must be the score returned by score_spot_fit.',
       inputSchema: z.object({
         day_number: z.number().int().min(1),
         date: z.string(),
         time_window: z.string().describe('e.g. "6:30 AM – 9:00 AM"'),
         spot_id: z.string(),
         spot_name: z.string(),
+        spot_coords: z
+          .tuple([z.number(), z.number()])
+          .optional()
+          .describe('[lon, lat] of the spot — set so the UI can pin it precisely'),
         board_id: z.string(),
-        reasoning: z.string(),
+        pick_reason: z
+          .string()
+          .min(1)
+          .max(160)
+          .describe('Short tagline for the per-spot animation, e.g. "Peak swell window — 5ft @ 14s, light offshore"'),
+        reasoning: z.string().describe('Long-form reasoning for the summary doc'),
         fit_score: z.number(),
         forecast_snapshot: z.record(z.string(), z.unknown()).optional(),
       }),
@@ -52,7 +61,9 @@ export function recordTools(
           time_window: args.time_window,
           spot_id: args.spot_id,
           spot_name: args.spot_name,
+          spot_coords: args.spot_coords,
           board_id: args.board_id,
+          pick_reason: args.pick_reason,
           reasoning: args.reasoning,
           fit_score: args.fit_score,
           forecast_snapshot: (args.forecast_snapshot ?? {}) as Session['forecast_snapshot'],

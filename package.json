@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx --test tests/*.test.ts",
+    "test": "tsx --test 'tests/*.test.ts' 'app/**/*.test.ts' 'app/**/*.test.tsx' 'lib/**/*.test.ts' 'lib/**/*.test.tsx'",
     "test:integration": "SURFPLANNER_INTEGRATION=1 tsx --test tests/integration/*.integration.test.ts",
     "typecheck": "tsc --noEmit"
   },

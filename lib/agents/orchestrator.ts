@@ -1,8 +1,9 @@
 import { nanoid } from 'nanoid';
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { kv } from '@/lib/kv';
-import type { PlanRequest, SendEvent, Trip, TripDay } from '@/lib/types';
+import type { PlanRequest, SendEvent, SurfPlannerModel, Trip, TripDay } from '@/lib/types';
 import { RateLimiter, type RateLimits } from '@/lib/rate-limiter';
+import { loadSpots } from '@/lib/tools/spots';
 import { runVisionAgent } from './vision';
 import { runReconAgent } from './recon';
 import { runPlannerAgent } from './planner';
@@ -15,6 +16,7 @@ export type McpClients = {
 };
 
 const TRIP_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
+const DEFAULT_PLANNER_MODEL: SurfPlannerModel = 'anthropic/claude-sonnet-4.6';
 
 export async function runPlanTrip(opts: {
   input: PlanRequest;
@@ -25,11 +27,13 @@ export async function runPlanTrip(opts: {
   const { input, mcpClients, sendEvent } = opts;
   const tripId = nanoid(8);
   const rateLimiter = new RateLimiter(opts.rateLimits);
+  const model = input.model ?? DEFAULT_PLANNER_MODEL;
 
   // Phase 1: Vision (parallel per board)
   const boards = await runVisionAgent({
     boards: input.boards,
     sendEvent,
+    model,
   });
 
   // Handoff vision → recon
@@ -47,6 +51,7 @@ export async function runPlanTrip(opts: {
     meteoMcp: mcpClients.meteo,
     sendEvent,
     rateLimiter,
+    model,
   });
 
   // Handoff recon → planner
@@ -65,6 +70,7 @@ export async function runPlanTrip(opts: {
     mapsMcp: mcpClients.maps,
     sendEvent,
     rateLimiter,
+    model,
   });
 
   // Handoff planner → narrator
@@ -83,16 +89,18 @@ export async function runPlanTrip(opts: {
     fsMcp: mcpClients.fs,
     sendEvent,
     rateLimiter,
+    model,
   });
 
-  // Phase 5: Assemble + save
+  // Phase 5: Assemble + save (with real spot coords resolved from spots.json)
+  const enrichedDays = await enrichSessionsWithCoords(planning.days);
   const trip: Trip = {
     id: tripId,
     created_at: new Date().toISOString(),
     params: input.params,
     quiver: boards,
-    days: planning.days,
-    route_geojson: buildRouteGeoJSON(input, planning.days),
+    days: enrichedDays,
+    route_geojson: await buildRouteGeoJSON(input, enrichedDays),
     summary_md: narration.summary_md,
     caveats: narration.caveats,
   };
@@ -105,22 +113,32 @@ export async function runPlanTrip(opts: {
   return trip;
 }
 
-function buildRouteGeoJSON(input: PlanRequest, days: TripDay[]) {
-  const points: Array<[number, number]> = [input.params.start_point];
+async function enrichSessionsWithCoords(days: TripDay[]): Promise<TripDay[]> {
+  const spots = await loadSpots();
+  const byId = new Map(spots.map((s) => [s.id, s] as const));
+  return days.map((day) => ({
+    ...day,
+    sessions: day.sessions.map((s) => {
+      if (s.spot_coords) return s;
+      const spot = byId.get(s.spot_id);
+      return spot ? { ...s, spot_coords: [spot.lon, spot.lat] as [number, number] } : s;
+    }),
+  }));
+}
+
+async function buildRouteGeoJSON(input: PlanRequest, days: TripDay[]) {
+  const spots = await loadSpots();
+  const byId = new Map(spots.map((s) => [s.id, s] as const));
+
+  const linePoints: Array<[number, number]> = [input.params.start_point];
   for (const day of days) {
     if (day.overnight) {
-      points.push(day.overnight.coords);
-    } else if (day.sessions.length > 0) {
-      // last session of last day, when no overnight is set
-      points.push(input.params.end_point);
+      linePoints.push(day.overnight.coords);
     }
   }
-  if (
-    points.length === 0 ||
-    points[points.length - 1][0] !== input.params.end_point[0] ||
-    points[points.length - 1][1] !== input.params.end_point[1]
-  ) {
-    points.push(input.params.end_point);
+  const last = linePoints[linePoints.length - 1];
+  if (last[0] !== input.params.end_point[0] || last[1] !== input.params.end_point[1]) {
+    linePoints.push(input.params.end_point);
   }
 
   return {
@@ -129,20 +147,28 @@ function buildRouteGeoJSON(input: PlanRequest, days: TripDay[]) {
       {
         type: 'Feature',
         properties: { kind: 'route' },
-        geometry: { type: 'LineString', coordinates: points },
+        geometry: { type: 'LineString', coordinates: linePoints },
       },
       ...days.flatMap((day) =>
-        day.sessions.map((s) => ({
-          type: 'Feature',
-          properties: {
-            kind: 'session',
-            day_number: day.day_number,
-            spot_id: s.spot_id,
-            spot_name: s.spot_name,
-            time_window: s.time_window,
-          },
-          geometry: { type: 'Point', coordinates: [0, 0] },
-        })),
+        day.sessions.map((s) => {
+          const spot = byId.get(s.spot_id);
+          const coords =
+            s.spot_coords ?? (spot ? ([spot.lon, spot.lat] as [number, number]) : ([0, 0] as [number, number]));
+          return {
+            type: 'Feature',
+            properties: {
+              kind: 'session',
+              day_number: day.day_number,
+              spot_id: s.spot_id,
+              spot_name: s.spot_name,
+              time_window: s.time_window,
+              pick_reason: s.pick_reason,
+              fit_score: s.fit_score,
+              board_id: s.board_id,
+            },
+            geometry: { type: 'Point', coordinates: coords },
+          };
+        }),
       ),
     ],
   };
