@@ -19,12 +19,13 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
  * tool (axios cache, npm config lookups, etc.) tries to touch a home dir.
  */
 
-const BIN_DIR = path.join(process.cwd(), 'node_modules', '.bin');
+const BUNDLE_DIR = path.join(process.cwd(), 'bundled-mcp');
 const SAFE_HOME = '/tmp';
 
 async function connect(opts: {
   name: string;
-  bin: string;
+  /** Folder under bundled-mcp/ — points at index.js */
+  bundle: string;
   args?: string[];
   env?: Record<string, string>;
 }) {
@@ -35,9 +36,10 @@ async function connect(opts: {
   baseEnv.HOME = SAFE_HOME;
   baseEnv.npm_config_cache = '/tmp/.npm';
 
+  const bundlePath = path.join(BUNDLE_DIR, opts.bundle, 'index.js');
   const transport = new StdioClientTransport({
-    command: path.join(BIN_DIR, opts.bin),
-    args: opts.args ?? [],
+    command: 'node',
+    args: [bundlePath, ...(opts.args ?? [])],
     env: { ...baseEnv, ...(opts.env ?? {}) },
   });
   const client = new Client({ name: opts.name, version: '0.1.0' });
@@ -48,14 +50,14 @@ async function connect(opts: {
 export async function getOpenMeteoMcp() {
   return connect({
     name: 'surftrip-open-meteo',
-    bin: 'open-meteo-mcp-server',
+    bundle: 'open-meteo',
   });
 }
 
 export async function getMapsMcp() {
   return connect({
     name: 'surftrip-google-maps',
-    bin: 'mcp-server-google-maps',
+    bundle: 'google-maps',
     env: { GOOGLE_MAPS_API_KEY: process.env.GOOGLE_MAPS_API_KEY ?? '' },
   });
 }
@@ -76,7 +78,7 @@ export async function getFilesystemMcp() {
   }
   return connect({
     name: 'surftrip-filesystem',
-    bin: 'mcp-server-filesystem',
+    bundle: 'filesystem',
     args: [EXPORTS_DIR],
   });
 }

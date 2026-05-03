@@ -2,35 +2,14 @@ import type { NextConfig } from 'next';
 import { withWorkflow } from 'workflow/next';
 
 const nextConfig: NextConfig = {
-  // Vercel only ships node_modules referenced by import graph. The MCP server
-  // packages are spawned as child processes (not imported), so without this
-  // they get tree-shaken out of the deployment bundle and the spawn fails
-  // with ENOENT. List both the package payloads and the bin entrypoints.
+  // Each MCP server is pre-bundled into a single self-contained JS file at
+  // build time (scripts/bundle-mcp.mjs, fired by the npm `prebuild` hook).
+  // The bundles inline every transitive dep so Vercel's tree-shaker doesn't
+  // need to resolve the deep dep graph at trace time. We just need to ship
+  // the bundled-mcp/ directory inside the function payload.
   outputFileTracingIncludes: {
-    'app/api/plan/**': [
-      './node_modules/open-meteo-mcp-server/**',
-      './node_modules/@modelcontextprotocol/server-google-maps/**',
-      './node_modules/@modelcontextprotocol/server-filesystem/**',
-      // The MCP server packages import @modelcontextprotocol/sdk at runtime —
-      // they aren't `import`ed by our code so Next won't bundle the SDK
-      // package alongside them without an explicit trace.
-      './node_modules/@modelcontextprotocol/sdk/**',
-      './node_modules/.bin/open-meteo-mcp-server',
-      './node_modules/.bin/mcp-server-google-maps',
-      './node_modules/.bin/mcp-server-filesystem',
-    ],
-    'app/.well-known/workflow/**': [
-      './node_modules/open-meteo-mcp-server/**',
-      './node_modules/@modelcontextprotocol/server-google-maps/**',
-      './node_modules/@modelcontextprotocol/server-filesystem/**',
-      // The MCP server packages import @modelcontextprotocol/sdk at runtime —
-      // they aren't `import`ed by our code so Next won't bundle the SDK
-      // package alongside them without an explicit trace.
-      './node_modules/@modelcontextprotocol/sdk/**',
-      './node_modules/.bin/open-meteo-mcp-server',
-      './node_modules/.bin/mcp-server-google-maps',
-      './node_modules/.bin/mcp-server-filesystem',
-    ],
+    'app/api/plan/**': ['./bundled-mcp/**'],
+    'app/.well-known/workflow/**': ['./bundled-mcp/**'],
   },
 };
 
