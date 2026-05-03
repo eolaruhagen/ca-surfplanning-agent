@@ -20,7 +20,7 @@ import AnythingElseCard from "./cards/anything-else";
  * progress dots, and prev/next/submit controls.
  *
  * On submit: builds PlanRequest, validates via PlanRequestSchema,
- * POSTs to /api/plan, and navigates to /plan/live.
+ * stores it for the live stream, and navigates to /plan/live.
  */
 export default function Deck() {
   const form = useIntakeForm();
@@ -46,17 +46,7 @@ export default function Deck() {
     }
     setSubmitting(true);
     try {
-      const res = await fetch("/api/plan", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(parsed.data),
-      });
-      if (!res.ok) {
-        const txt = await res.text().catch(() => "");
-        throw new Error(`Server returned ${res.status}: ${txt.slice(0, 120)}`);
-      }
-      // The /api/plan response is an SSE stream consumed by /plan/live.
-      // For now, navigate there; live-feed wiring to real SSE is a follow-up.
+      sessionStorage.setItem("planRequest", JSON.stringify(parsed.data));
       router.push("/plan/live");
     } catch (err) {
       setSubmitting(false);
