@@ -261,6 +261,28 @@ body {
   100% { transform: scale(1);   opacity: 1; }
 }
 
+/* Trip-view session pin — wraps a numbered SessionMarker. The active pin
+   gets a soft pulsing halo to draw the eye toward the current session. */
+.session-pin {
+  position: relative;
+  display: inline-flex;
+  animation: day-stop-pop 320ms var(--ease-soft);
+}
+.session-pin.is-current::after {
+  content: "";
+  position: absolute;
+  inset: -10px;
+  border-radius: 999px;
+  border: 2px solid rgb(28 25 23 / 0.55);
+  opacity: 0;
+  animation: session-pin-halo 1.8s var(--ease-soft) infinite;
+  pointer-events: none;
+}
+@keyframes session-pin-halo {
+  0%   { opacity: 0.6; transform: scale(0.7); }
+  100% { opacity: 0;   transform: scale(2.2); }
+}
+
 /* ─────────────────────────────────────────────────────────────────────────────
    LIVE FEED — agent cards, tool chips, conversation bubbles.
    ──────────────────────────────────────────────────────────────────────────── */

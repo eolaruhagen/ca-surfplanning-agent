@@ -1,11 +1,19 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
-import dynamic from "next/dynamic";
-import { Marker } from "react-map-gl/mapbox";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Map as MapGL,
+  Marker,
+  NavigationControl,
+  Source,
+  Layer,
+} from "react-map-gl/mapbox";
 import type { MapRef } from "react-map-gl/mapbox";
+import type { Feature, FeatureCollection } from "geojson";
 
 import type { Trip } from "@/lib/types";
+import { buildCaliforniaMask } from "@/app/components/map/buildMask";
+import { extractRouteFeatures } from "./helpers/route";
 import { useTripView } from "./hook";
 import SpeechBubble from "./speech-bubble";
 import DayRail from "./day-rail";
@@ -13,16 +21,22 @@ import NavControls from "./nav-controls";
 import PitchToggle from "./pitch-toggle";
 import SessionMarker from "./session-marker";
 
-const CaliforniaMap = dynamic(
-  () => import("@/app/components/map/CaliforniaMap"),
-  { ssr: false },
-);
-
 type TripViewProps = {
   trip: Trip;
 };
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? "";
+
+const INITIAL_VIEW = {
+  longitude: -119.5,
+  latitude: 37,
+  zoom: 5.4,
+};
+
+const CA_BOUNDS: [[number, number], [number, number]] = [
+  [-125.0, 32.3],
+  [-113.5, 42.2],
+];
 
 export default function TripView({ trip }: TripViewProps) {
   const {
@@ -39,10 +53,32 @@ export default function TripView({ trip }: TripViewProps) {
   } = useTripView(trip);
 
   const mapRef = useRef<MapRef | null>(null);
+  const [mapReady, setMapReady] = useState(false);
   const [is3D, setIs3D] = useState(false);
-  const hasFlownRef = useRef(false);
+  const hasInitialFlownRef = useRef(false);
 
-  const flyToSession = useCallback(
+  const [boundary, setBoundary] = useState<FeatureCollection | Feature | null>(
+    null,
+  );
+
+  useEffect(() => {
+    fetch("/california.geojson")
+      .then((r) => r.json())
+      .then(setBoundary)
+      .catch((e) => console.error("boundary load failed", e));
+  }, []);
+
+  const mask = useMemo(
+    () => (boundary ? buildCaliforniaMask(boundary) : null),
+    [boundary],
+  );
+
+  const routeFC = useMemo(
+    () => extractRouteFeatures(trip.route_geojson),
+    [trip.route_geojson],
+  );
+
+  const flyToCoords = useCallback(
     (coords: [number, number] | undefined, pitch: number) => {
       if (!coords || !mapRef.current) return;
       mapRef.current.flyTo({
@@ -57,18 +93,58 @@ export default function TripView({ trip }: TripViewProps) {
     [],
   );
 
-  const handleMapReady = useCallback((map: MapRef) => {
-    mapRef.current = map;
+  const handleMapLoad = useCallback(() => {
+    const m = mapRef.current?.getMap();
+    if (!m) {
+      setMapReady(true);
+      return;
+    }
+    try {
+      if (!m.getSource("mapbox-dem")) {
+        m.addSource("mapbox-dem", {
+          type: "raster-dem",
+          url: "mapbox://mapbox.mapbox-terrain-dem-v1",
+          tileSize: 512,
+          maxzoom: 14,
+        });
+      }
+      m.setTerrain({ source: "mapbox-dem", exaggeration: 1.4 });
+      if (!m.getLayer("sky")) {
+        m.addLayer({
+          id: "sky",
+          type: "sky",
+          paint: {
+            "sky-type": "atmosphere",
+            "sky-atmosphere-sun-intensity": 5,
+          },
+        });
+      }
+    } catch (err) {
+      console.warn("terrain setup failed", err);
+    }
+    setMapReady(true);
   }, []);
+
+  // Initial fly to the first session, once the map is ready
+  useEffect(() => {
+    if (!mapReady || hasInitialFlownRef.current) return;
+    const first = flatSessions[0]?.session;
+    if (!first?.spot_coords) return;
+    hasInitialFlownRef.current = true;
+    setIs3D(true);
+    flyToCoords(first.spot_coords, 60);
+  }, [mapReady, flatSessions, flyToCoords]);
 
   const handleToggle3D = useCallback(() => {
     setIs3D((v) => {
       const next3D = !v;
       const pitch = next3D ? 60 : 0;
-      if (mapRef.current) {
-        mapRef.current.flyTo({
-          center: mapRef.current.getCenter() as unknown as [number, number],
-          zoom: mapRef.current.getZoom(),
+      const m = mapRef.current;
+      if (m) {
+        const c = m.getCenter();
+        m.flyTo({
+          center: [c.lng, c.lat],
+          zoom: m.getZoom(),
           pitch,
           duration: 900,
           essential: true,
@@ -78,67 +154,118 @@ export default function TripView({ trip }: TripViewProps) {
     });
   }, []);
 
-  // On first play, enable 3D and fly to current session
-  const handleTogglePlay = useCallback(() => {
-    if (!isPlaying && !hasFlownRef.current) {
-      hasFlownRef.current = true;
-      setIs3D(true);
-      flyToSession(currentSession?.spot_coords, 60);
-    }
-    toggle();
-  }, [isPlaying, currentSession, toggle, flyToSession]);
-
-  // Fly on session advance
-  const handleNext = useCallback(() => {
-    next();
-    const nextFlat = flatSessions[Math.min(currentIndex + 1, flatSessions.length - 1)];
-    flyToSession(nextFlat?.session?.spot_coords, is3D ? 60 : 0);
-  }, [next, flatSessions, currentIndex, is3D, flyToSession]);
-
-  const handlePrev = useCallback(() => {
-    prev();
-    const prevFlat = flatSessions[Math.max(currentIndex - 1, 0)];
-    flyToSession(prevFlat?.session?.spot_coords, is3D ? 60 : 0);
-  }, [prev, flatSessions, currentIndex, is3D, flyToSession]);
-
-  const handleJumpTo = useCallback(
-    (idx: number) => {
-      jumpTo(idx);
-      const flat = flatSessions[idx];
-      flyToSession(flat?.session?.spot_coords, is3D ? 60 : 0);
-    },
-    [jumpTo, flatSessions, is3D, flyToSession],
-  );
-
-  const handleJumpToDay = useCallback(
-    (dayIndex: number) => {
-      jumpToDay(dayIndex);
-      const first = flatSessions.find((fs) => fs.dayIndex === dayIndex);
-      flyToSession(first?.session?.spot_coords, is3D ? 60 : 0);
-    },
-    [jumpToDay, flatSessions, is3D, flyToSession],
-  );
+  // Fly whenever currentIndex changes (covers user clicks AND auto-advance)
+  useEffect(() => {
+    if (!mapReady) return;
+    const coords = flatSessions[currentIndex]?.session?.spot_coords;
+    if (!coords) return;
+    flyToCoords(coords, is3D ? 60 : 0);
+    // is3D intentionally omitted — toggle handles its own flyTo above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentIndex, mapReady, flatSessions]);
 
   const currentDayIndex = flatSessions[currentIndex]?.dayIndex ?? 0;
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-[var(--color-background)]">
-      {/* Map — full bleed */}
-      <CaliforniaMap
-        showSpotList={false}
-        showSpotDetail={false}
-        header={null}
-        onMapReady={handleMapReady}
-      />
+      <MapGL
+        ref={(r) => {
+          mapRef.current = r;
+        }}
+        mapboxAccessToken={MAPBOX_TOKEN}
+        initialViewState={INITIAL_VIEW}
+        minZoom={5}
+        maxZoom={18}
+        maxBounds={CA_BOUNDS}
+        mapStyle="mapbox://styles/mapbox/light-v11"
+        style={{ width: "100%", height: "100%" }}
+        onLoad={handleMapLoad}
+      >
+        <NavigationControl position="bottom-right" showCompass={false} />
 
-      {/* Session markers on map — rendered as Mapbox Markers */}
-      {/* Note: We render markers as absolute overlays since CaliforniaMap owns MapGL */}
-      {/* For simplicity, we layer session info in the UI panel, not on the map */}
+        {/* Outside-California mask */}
+        {mask && (
+          <Source id="ca-mask" type="geojson" data={mask}>
+            <Layer
+              id="ca-mask-fill"
+              type="fill"
+              paint={{ "fill-color": "#fafaf7", "fill-opacity": 0.85 }}
+            />
+          </Source>
+        )}
+
+        {/* California outline */}
+        {boundary && (
+          <Source
+            id="ca-outline"
+            type="geojson"
+            data={boundary as FeatureCollection}
+          >
+            <Layer
+              id="ca-outline-line"
+              type="line"
+              paint={{
+                "line-color": "#1c1917",
+                "line-width": 1,
+                "line-opacity": 0.5,
+              }}
+            />
+          </Source>
+        )}
+
+        {/* Trip driving route — casing + stroke */}
+        {routeFC && (
+          <Source id="trip-route" type="geojson" data={routeFC}>
+            <Layer
+              id="trip-route-casing"
+              type="line"
+              paint={{
+                "line-color": "#ffffff",
+                "line-width": 6,
+                "line-opacity": 0.95,
+              }}
+              layout={{ "line-cap": "round", "line-join": "round" }}
+            />
+            <Layer
+              id="trip-route-line"
+              type="line"
+              paint={{
+                "line-color": "#1c1917",
+                "line-width": 3,
+                "line-opacity": 0.9,
+              }}
+              layout={{ "line-cap": "round", "line-join": "round" }}
+            />
+          </Source>
+        )}
+
+        {/* Numbered session pins */}
+        {flatSessions.map((fs) => {
+          const coords = fs.session.spot_coords;
+          if (!coords) return null;
+          const isCurrent = fs.globalIndex === currentIndex;
+          return (
+            <Marker
+              key={`session-${fs.globalIndex}`}
+              longitude={coords[0]}
+              latitude={coords[1]}
+              anchor="center"
+            >
+              <div className={`session-pin${isCurrent ? " is-current" : ""}`}>
+                <SessionMarker
+                  number={fs.globalIndex + 1}
+                  isCurrent={isCurrent}
+                  onClick={() => jumpTo(fs.globalIndex)}
+                />
+              </div>
+            </Marker>
+          );
+        })}
+      </MapGL>
 
       {/* Top bar: header + day rail */}
       <div className="absolute top-0 left-0 right-0 z-30 pointer-events-none">
         <div className="px-6 pt-5 pb-4 flex flex-col gap-3">
-          {/* Title */}
           <div className="pointer-events-auto flex items-center justify-between">
             <h1 className="text-display text-2xl text-stone-900">
               <span className="italic">Surf</span>{" "}
@@ -150,12 +277,11 @@ export default function TripView({ trip }: TripViewProps) {
             </div>
           </div>
 
-          {/* Day rail */}
           <div className="pointer-events-auto">
             <DayRail
               days={trip.days}
               currentDayIndex={currentDayIndex}
-              onDaySelect={handleJumpToDay}
+              onDaySelect={jumpToDay}
             />
           </div>
         </div>
@@ -164,7 +290,6 @@ export default function TripView({ trip }: TripViewProps) {
       {/* Bottom panel: speech bubble + nav */}
       <div className="absolute bottom-0 left-0 right-0 z-30 pointer-events-none">
         <div className="px-6 pb-8 flex flex-col gap-4">
-          {/* Session context */}
           {currentSession && (
             <div className="pointer-events-auto">
               <div className="mb-1">
@@ -179,15 +304,14 @@ export default function TripView({ trip }: TripViewProps) {
             </div>
           )}
 
-          {/* Nav controls */}
           <div className="pointer-events-auto flex items-center">
             <NavControls
               currentIndex={currentIndex}
               total={flatSessions.length}
               isPlaying={isPlaying}
-              onPrev={handlePrev}
-              onNext={handleNext}
-              onToggle={handleTogglePlay}
+              onPrev={prev}
+              onNext={next}
+              onToggle={toggle}
             />
           </div>
         </div>
