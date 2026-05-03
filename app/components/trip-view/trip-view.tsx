@@ -110,6 +110,21 @@ export default function TripView({ trip }: TripViewProps) {
         });
       }
       m.setTerrain({ source: "mapbox-dem", exaggeration: 1.4 });
+      if (!m.getLayer("trip-hillshade")) {
+        // Subtle topo shading so 3D pitch actually reads visually
+        m.addLayer({
+          id: "trip-hillshade",
+          type: "hillshade",
+          source: "mapbox-dem",
+          paint: {
+            "hillshade-illumination-direction": 335,
+            "hillshade-exaggeration": 0.45,
+            "hillshade-shadow-color": "rgba(28, 25, 23, 0.22)",
+            "hillshade-highlight-color": "rgba(180, 165, 130, 0.18)",
+            "hillshade-accent-color": "rgba(120, 113, 108, 0.12)",
+          },
+        });
+      }
       if (!m.getLayer("sky")) {
         m.addLayer({
           id: "sky",
@@ -174,6 +189,34 @@ export default function TripView({ trip }: TripViewProps) {
 
   const currentDayIndex = flatSessions[currentIndex]?.dayIndex ?? 0;
 
+  // Fan-cluster sessions that share a spot so the numbered pins don't overlap.
+  // Mapbox `offset` is pixel-based → zoom-invariant.
+  const sessionOffsets = useMemo(() => {
+    const groups = new Map<string, typeof flatSessions>();
+    for (const fs of flatSessions) {
+      const c = fs.session.spot_coords;
+      if (!c) continue;
+      const key = `${c[0].toFixed(6)},${c[1].toFixed(6)}`;
+      const arr = groups.get(key) ?? [];
+      arr.push(fs);
+      groups.set(key, arr);
+    }
+    const out = new Map<number, [number, number]>();
+    for (const arr of groups.values()) {
+      if (arr.length === 1) {
+        out.set(arr[0].globalIndex, [0, 0]);
+        continue;
+      }
+      arr.sort((a, b) => a.globalIndex - b.globalIndex);
+      const r = 16;
+      arr.forEach((fs, i) => {
+        const angle = (2 * Math.PI * i) / arr.length - Math.PI / 2;
+        out.set(fs.globalIndex, [r * Math.cos(angle), r * Math.sin(angle)]);
+      });
+    }
+    return out;
+  }, [flatSessions]);
+
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-[var(--color-background)]">
       <MapGL
@@ -202,13 +245,21 @@ export default function TripView({ trip }: TripViewProps) {
           </Source>
         )}
 
-        {/* California outline */}
+        {/* California outline + faint warm fill so the land has a touch of color */}
         {boundary && (
           <Source
             id="ca-outline"
             type="geojson"
             data={boundary as FeatureCollection}
           >
+            <Layer
+              id="ca-fill-tint"
+              type="fill"
+              paint={{
+                "fill-color": "#f0e9d8",
+                "fill-opacity": 0.18,
+              }}
+            />
             <Layer
               id="ca-outline-line"
               type="line"
@@ -258,6 +309,7 @@ export default function TripView({ trip }: TripViewProps) {
               longitude={coords[0]}
               latitude={coords[1]}
               anchor="center"
+              offset={sessionOffsets.get(fs.globalIndex) ?? [0, 0]}
             >
               <div className={`session-pin${isCurrent ? " is-current" : ""}`}>
                 <SessionMarker
