@@ -17,7 +17,7 @@ export type McpClients = {
 };
 
 const TRIP_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
-const DEFAULT_PLANNER_MODEL: SurfPlannerModel = 'anthropic/claude-sonnet-4.6';
+const DEFAULT_PLANNER_MODEL: SurfPlannerModel = 'anthropic/claude-haiku-4.5';
 
 export async function runPlanTrip(opts: {
   input: PlanRequest;
