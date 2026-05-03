@@ -15,6 +15,7 @@ import type {
   StreamEventSchema,
   PhaseSchema,
   ConfidenceSchema,
+  AgentNameSchema,
 } from './schemas';
 
 export type { Spot, SkillLevel } from './spots';
@@ -34,5 +35,8 @@ export type Trip = z.infer<typeof TripSchema>;
 export type StreamEvent = z.infer<typeof StreamEventSchema>;
 export type Phase = z.infer<typeof PhaseSchema>;
 export type Confidence = z.infer<typeof ConfidenceSchema>;
+export type AgentName = z.infer<typeof AgentNameSchema>;
 
 export type ToolResult<T> = { ok: true; data: T } | { ok: false; error: string };
+
+export type SendEvent = (event: StreamEvent) => void;

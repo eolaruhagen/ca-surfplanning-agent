@@ -141,19 +141,86 @@ export const TripSchema = z.object({
   caveats: z.array(z.string()),
 });
 
-export const PhaseSchema = z.enum(['vision', 'planning', 'export', 'done']);
+export const PhaseSchema = z.enum([
+  'vision',
+  'recon',
+  'planning',
+  'narration',
+  'done',
+]);
+
+export const AgentNameSchema = z.enum([
+  'orchestrator',
+  'vision',
+  'recon',
+  'planner',
+  'narrator',
+]);
 
 export const StreamEventSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('phase'), phase: PhaseSchema }),
+  z.object({
+    type: z.literal('phase'),
+    phase: PhaseSchema,
+  }),
+  z.object({
+    type: z.literal('agent_start'),
+    agent: AgentNameSchema,
+    task: z.string(),
+  }),
+  z.object({
+    type: z.literal('agent_finish'),
+    agent: AgentNameSchema,
+    summary: z.string(),
+  }),
+  z.object({
+    type: z.literal('agent_message'),
+    from: AgentNameSchema,
+    to: AgentNameSchema,
+    content: z.string(),
+  }),
+  z.object({
+    type: z.literal('agent_thinking'),
+    agent: AgentNameSchema,
+    text: z.string(),
+  }),
   z.object({
     type: z.literal('vision_progress'),
     board_index: z.number().int(),
     board: BoardProfileSchema,
   }),
-  z.object({ type: z.literal('agent_thinking'), text: z.string() }),
-  z.object({ type: z.literal('tool_call'), name: z.string(), args: z.unknown() }),
-  z.object({ type: z.literal('tool_result'), name: z.string(), summary: z.string() }),
-  z.object({ type: z.literal('day_complete'), day: TripDaySchema }),
-  z.object({ type: z.literal('done'), trip_id: z.string(), trip: TripSchema }),
-  z.object({ type: z.literal('error'), message: z.string() }),
+  z.object({
+    type: z.literal('tool_call'),
+    agent: AgentNameSchema,
+    name: z.string(),
+    source: z.enum(['local', 'mcp:open-meteo', 'mcp:google-maps', 'mcp:filesystem']),
+    args: z.unknown(),
+  }),
+  z.object({
+    type: z.literal('tool_result'),
+    agent: AgentNameSchema,
+    name: z.string(),
+    summary: z.string(),
+  }),
+  z.object({
+    type: z.literal('data_observed'),
+    agent: AgentNameSchema,
+    kind: z.enum(['spot', 'forecast', 'route', 'tide', 'buoy', 'place']),
+    summary: z.string(),
+    spot_id: z.string().optional(),
+    score: z.number().optional(),
+  }),
+  z.object({
+    type: z.literal('day_complete'),
+    day: TripDaySchema,
+  }),
+  z.object({
+    type: z.literal('done'),
+    trip_id: z.string(),
+    trip: TripSchema,
+  }),
+  z.object({
+    type: z.literal('error'),
+    agent: AgentNameSchema.optional(),
+    message: z.string(),
+  }),
 ]);

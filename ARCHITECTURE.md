@@ -35,7 +35,7 @@ Read these before writing code. They override generic best practices when they c
 
 9. **`spots.json` is canonical and not to be regenerated.** The spot dataset has been hand-authored with confidence flags. Never replace it with LLM-generated data, even if it looks incomplete.
 
-10. **Single-agent first, multi-agent if time.** Build the trip planner as ONE agent with a comprehensive tool kit. Only split into multiple specialized agents (recon, planner, narrator) after the single-agent version is shipping a working trip end-to-end.
+10. **Multi-agent collaborative operation (decision updated).** The planner is structured as four specialized agents that hand off to each other in sequence: **vision → recon → planner → narrator**. Their tool calls, reasoning, and inter-agent handoff messages stream live to the client and the UI must render this as a *visible collaboration between named agents* — not a single opaque spinner. See **Multi-agent collaborative operation** below for the full surface area.
 
 ---
 
@@ -89,6 +89,57 @@ flowchart TB
 ```
 
 Single Vercel deployment. Three MCP servers run as stdio child processes spawned per request. Local tools (the ones that depend on `spots.json` or implement scoring logic) live in-process. KV stores completed trips for sharing.
+
+---
+
+## Multi-agent collaborative operation
+
+**The demo experience.** The planning surface is **a collaborative operation between four named agents**, not a single black-box "planning..." spinner. Judges (and users) see distinct agents take turns, hand off explicit messages, and surface what they're examining in real time.
+
+**The four agents and their roles**
+
+| Agent | Phase | Responsibility | Primary tools |
+|---|---|---|---|
+| **Vision** | `vision` | Identify each uploaded board (parallel per board). | `generateObject` against a vision-capable model |
+| **Recon** | `recon` | Discover candidate spots within trip bounds, fetch swell/wind/tide forecasts, score spot+time windows, surface peak conditions. | `list_candidate_spots`, `lookup_spot`, `score_spot_fit`, `get_tide_predictions`, `get_buoy_reading`, MCP `marine_weather`, MCP `weather_forecast` |
+| **Planner** | `planning` | Receive recon's report, sequence days, pick sessions, match boards to conditions, compute drives, choose overnights. | `lookup_spot`, MCP `directions`, MCP `places_search`, `record_session`, `record_overnight`, `record_drive` |
+| **Narrator** | `narration` | Draft a human-readable trip summary, write three export artifacts (markdown, GeoJSON, ICS). | MCP filesystem `write_file` |
+
+**Streamed event surface (consumed by `<LiveFeed />`)**
+
+Every event is a `StreamEvent` (lib/schemas.ts `StreamEventSchema`). The events that drive the multi-agent UX:
+
+- `phase` — `'vision' | 'recon' | 'planning' | 'narration' | 'done'`. Acts as a section header.
+- `agent_start` — `{ agent, task }` when an agent begins. Render as a "now active" treatment for that agent.
+- `agent_thinking` — `{ agent, text }` narrative reasoning the agent emits while working.
+- `tool_call` — `{ agent, name, source, args }`. `source` is `'local' | 'mcp:open-meteo' | 'mcp:google-maps' | 'mcp:filesystem'` — let the UI badge MCP calls distinctly so the MCP integration is *visibly* MCP.
+- `tool_result` — `{ agent, name, summary }` (short string, not the full payload).
+- `data_observed` — `{ agent, kind, summary, spot_id?, score? }` — used for "what they're looking at right now" callouts (e.g., "Recon is examining Rincon at 2026-05-09T07:00 — score 87").
+- `agent_message` — `{ from, to, content }` the **explicit handoff** from one agent to the next. This is the conversation the user must see. Rendered like a chat bubble: "**Recon → Planner**: 18 candidate sessions. Peak swell day Saturday at Rincon..."
+- `agent_finish` — `{ agent, summary }` paired terminator.
+- `vision_progress` — `{ board_index, board }` board-by-board ID completion.
+- `day_complete` — `{ day }` rendered as a card preview as the planner builds out.
+- `done` — `{ trip_id, trip }` final.
+- `error` — `{ agent?, message }`.
+
+**UI rendering requirements (for the UI agent)**
+
+- **Each agent has a distinct identity** in the live feed: a name, a color, and a small icon. Reuse the `app/globals.css` design system (skill colors are taken — pick a separate agent palette, e.g., one shade per agent off the existing `surface-glass` / accent treatments).
+- **Phase headers** are visually prominent — they delimit the run.
+- **`agent_message` events render as chat-style handoffs** ("Recon → Planner: ..."). They are the most important elements for the multi-agent feel; size them up.
+- **`agent_thinking` events render as italic narrative** under the active agent's name.
+- **MCP tool calls are visually distinct** from local tool calls (e.g., a small `[MCP]` badge with the source name). This is essential for the MCP-eligibility story in the demo.
+- **`data_observed` events surface as compact callouts** ("👀 Examining Rincon — fit score 87"). These are the "what's the agent currently looking at" moments.
+- **No single spinner** for the entire run. The feed must always have something happening; if a `phase` is active without other events, render a subtle per-agent activity indicator under that agent's banner — but only as a fallback, the agents should be emitting near-continuous events.
+
+**Server-side guarantees**
+
+- The orchestrator emits a `phase` event before every agent and an `agent_start` immediately after.
+- Each agent's `streamText` call wires `onStepFinish` (or per-tool callbacks) to emit `tool_call` + `tool_result` events with the agent's name attached.
+- After each agent completes its work, the orchestrator emits an `agent_message` from that agent to the next, with a short structured summary as the content. This is the visible handoff.
+- After the last agent (narrator), the orchestrator assembles the final `Trip`, saves to KV, emits `done`.
+
+This collaborative-operation framing is **the core demo moment** — the thing that makes the planner feel like a team of specialists instead of a chatbot.
 
 ---
 

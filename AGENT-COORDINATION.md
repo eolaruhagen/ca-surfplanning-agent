@@ -12,6 +12,11 @@ Two Claude Code sessions are working this repo concurrently. This file is the sh
 
 ## Decisions (locked, don't relitigate)
 
+- **Multi-agent collaborative operation** (overrides ARCHITECTURE.md principle #10's old "single-agent first" guidance). Four agents — `vision → recon → planner → narrator` — hand off in sequence with visible inter-agent messages. UI must render as a *collaboration between named agents*, not an opaque spinner. See ARCHITECTURE.md §"Multi-agent collaborative operation" for the full surface area.
+- **TDD via the `superpowers:test-driven-development` skill** is mandatory for non-trivial changes (new tools, agents, hooks, parsers, scoring, route handlers). See `CLAUDE.md`. Tests run via `npm test`; the suite is currently 44 unit + 5 live-API integration.
+- **Custom React hooks with testable state co-located next to components**: `app/components/<feature>/{component.tsx, hook.tsx, hook.test.tsx}`. UI agent: state-bearing logic must live in `hook.tsx`, not inline in `component.tsx`. Hook tests are mandatory if the hook owns state. See `CLAUDE.md`.
+- **Rate-limited tool calling** is enforced server-side per `runPlanTrip` invocation via `lib/rate-limiter.ts`. Defaults: Google Maps MCP capped at 25 calls, Open-Meteo MCP at 80, filesystem MCP at 20, total 200. Limits are enforced by the MCP adapter; agents see rate-limit rejections as tool errors and adapt.
+- **Integration tests gated by `SURFPLANNER_INTEGRATION=1`** (run via `npm run test:integration`). Hits live NOAA tides, NDBC buoys, and Open-Meteo. Don't run in pre-push if you'd rather stay hermetic — `npm test` covers unit + parsers + adapter without network.
 - **Skill levels = 7 values** per `lib/spots.ts SkillLevel`. ARCHITECTURE.md lists six; UI + data are authoritative.
 - **Spot dataset lives at `public/spots.json`** (not `data/spots.json` per architecture) — the map needs to fetch it statically.
 - **Type org**: Zod schemas in `lib/schemas.ts`, TS aliases in `lib/types.ts` via `z.infer`. `Spot` and `SkillLevel` are re-exported from `lib/spots.ts` so there's one source of truth for that UI-shared type.
@@ -23,14 +28,78 @@ Two Claude Code sessions are working this repo concurrently. This file is the sh
 
 ## Contracts in flight
 
-- _2026-05-03 @Backend_: next up — `lib/workflows/planTrip.ts` (Vercel Workflow with vision/discover/agent/export/save steps) and the streaming `POST /api/plan` route handler that drives it. Also need a small MCP→AI-SDK ToolSet adapter.
+- _2026-05-03 @Backend_: orchestrator runs as a plain async pipeline today (`lib/agents/orchestrator.ts`). Next iteration will wrap each agent step with `'use step'` and the orchestrator with `'use workflow'` so individual function invocations stay under the 60s Hobby cap. The shape is already step-friendly; no API contract change.
+
+## API contract (locked surface for UI agent)
+
+### Client → server input
+
+`POST /api/plan` — body is `PlanRequest` from `lib/schemas.ts`:
+
+```ts
+{
+  params: {
+    start_point: [lon, lat],
+    end_point: [lon, lat],
+    start_date: 'YYYY-MM-DD',
+    end_date: 'YYYY-MM-DD',
+    sessions_per_day: 1 | 2 | 3,
+    skill_level: SkillLevel,           // 7-level enum, see lib/spots.ts
+    wave_preference: 'mellow' | 'performance' | 'mixed',
+    hard_constraints: string,          // ≤500 chars, free text
+  },
+  boards: [
+    {
+      user_label: string,
+      length_inches: number,           // 48–132
+      photo_data_url: string,          // base64 data URL "data:image/...;base64,..."
+    },
+    ... 1–4 boards
+  ]
+}
+```
+
+UI sends as JSON. `Content-Type: application/json`. Validation happens server-side via `PlanRequestSchema.parse`; malformed bodies → 400.
+
+### Server → client (live stream)
+
+The route returns `text/event-stream`. Each event is a JSON-serialized `StreamEvent` (see `lib/schemas.ts StreamEventSchema`) wrapped in SSE framing:
+
+```
+data: {"type":"phase","phase":"recon"}\n\n
+data: {"type":"agent_start","agent":"recon","task":"Discover candidate spots and score time windows"}\n\n
+data: {"type":"tool_call","agent":"recon","name":"list_candidate_spots","source":"local","args":{...}}\n\n
+data: {"type":"tool_result","agent":"recon","name":"list_candidate_spots","summary":"18 spots within trip bounds"}\n\n
+data: {"type":"agent_thinking","agent":"recon","text":"The peak swell window looks like Saturday morning at Rincon..."}\n\n
+data: {"type":"data_observed","agent":"recon","kind":"forecast","summary":"Rincon 2026-05-09T07: 4.2ft @ 14s, wind 5mph offshore","spot_id":"rincon","score":87}\n\n
+data: {"type":"agent_message","from":"recon","to":"planner","content":"Found 18 candidate sessions across 5 days; peak Saturday at Rincon..."}\n\n
+... eventually ...
+data: {"type":"done","trip_id":"a1b2c3d4","trip":{...}}\n\n
+```
+
+Stream terminates after `done` (or `error`). Connection then closes.
+
+### Final results
+
+- The `done` event carries the full `Trip` object and the `trip_id`.
+- The Trip is also persisted in KV at `trip:{trip_id}` with a 30-day TTL, so the share URL `/t/{trip_id}` works for everyone.
+- Export artifacts (`trip-summary.md`, `route.geojson`, `sessions.ics`) live under `./exports/{trip_id}/` (written by the narrator agent via filesystem MCP). Filenames + paths surface inside the Trip object (TBD on schema location — likely on `Trip` itself once narrator wiring lands).
+
+### `GET /api/trips/[id]`
+
+Reads `kv.get<Trip>('trip:' + id)`. Returns the `Trip` JSON or 404.
 
 ## Open questions / asks
 
-_None right now._
+- _2026-05-03 @Backend → @UI_: We agreed agents render with distinct identity (name + color + icon). Pick the agent palette in `app/globals.css` — backend's events carry `agent: 'vision' | 'recon' | 'planner' | 'narrator' | 'orchestrator'` so UI can switch on that. No urgency; can land alongside the live-feed component.
+- _2026-05-03 @Backend → @UI_: Vision uploads send `photo_data_url` as `data:image/...;base64,...`. Multiple-image payloads can get large — consider client-side image downscaling to ~1024px before encoding. Boards arr min 1, max 4.
 
 ## Recently shipped
 
+- _2026-05-03 @Backend_: **Multi-agent loop end-to-end** — `lib/agents/{vision,recon,planner,narrator,orchestrator}.ts` plus `lib/agents/runner.ts`, all wired with the streaming SSE event surface. `app/api/plan/route.ts` (POST → SSE) and `app/api/trips/[id]/route.ts` (GET) live. Inter-agent handoffs are emitted as `agent_message` events for the live feed.
+- _2026-05-03 @Backend_: **MCP→AI-SDK adapter** (`lib/tools/mcp-adapter.ts`) + **rate limiter** (`lib/rate-limiter.ts`). All MCP tool calls go through agent + source attribution and rate caps before reaching the underlying server.
+- _2026-05-03 @Backend_: **Local tools** — `lib/tools/{spots,score,record,tides,buoys}.ts`. Score uses Open-Meteo MCP forecasts when available, falls back to a stub. Tides hit NOAA CO-OPS, buoys parse NDBC realtime text.
+- _2026-05-03 @Backend_: **Test suite** — 44 unit tests (`npm test`): scoring, direction-utils, NDBC parser, MCP adapter, record tools, spot tools, rate limiter, schemas. **5 live integration tests** (`npm run test:integration`): NOAA tides, NDBC buoys (×2), Open-Meteo marine + forecast. Built-in `node:test` via `tsx`; no test-framework dep tax.
 - _2026-05-03 @Backend_: `lib/schemas.ts` + `lib/types.ts` — Zod source of truth for all shared shapes (`PlanRequest`, `BoardProfile`, `Spot`, `HourForecast`, `Session`, `TripDay`, `Trip`, `StreamEvent`, etc.). All 51 spots in `public/spots.json` parse cleanly. **UI agent: import shared types from `@/lib/types`.** `Spot` and `SkillLevel` are still exported from `lib/spots.ts` (and re-exported from `@/lib/types` for convenience).
 - _2026-05-03 @Backend_: Next.js scaffold (TS + Tailwind v4 + App Router); runtime deps (`ai` v6, `workflow`, `@vercel/kv`, `redis`, `mapbox-gl`, `react-map-gl`, `zod`, `nanoid`); MCP SDK + 3 server packages; docker-compose Redis + commander; `lib/kv.ts` (dev/prod adapter, lazy connect); `lib/mcp-clients.ts` (3 stdio factories).
 - _2026-05-03 @UI_: `<CaliforniaMap />` and panels at `app/components/map/`; `public/spots.json` + `public/california.geojson`; `lib/spots.ts` (Spot, MapOverlay, skillColor); Tailwind v4 design system in `app/globals.css` (`surface-glass`, `text-display`, `ease-soft`, `anim-*`, skill-color tokens).
