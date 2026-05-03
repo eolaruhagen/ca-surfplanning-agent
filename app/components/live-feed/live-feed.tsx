@@ -2,145 +2,132 @@
 
 import type { AgentName } from "@/lib/types";
 import AgentCard from "./agent-card";
-import ChatBubble from "./chat-bubble";
+import InterAgentArcOverlay from "./inter-agent-arc";
 import type { LiveFeedState } from "./hook";
-import { AGENT_COLOR, AGENT_LABEL, agentIcon } from "../agent-icons";
 
-const AGENT_ORDER: AgentName[] = [
-  "vision",
-  "recon",
-  "planner",
-  "narrator",
-];
+const SPECIALIST_ORDER: AgentName[] = ["vision", "recon", "planner", "narrator"];
 
 /**
- * Render-only live feed. Consumes derived state from {@link useLiveFeed}.
- * Interleaves per-agent cards with inter-agent chat bubbles in the order
- * the events arrived (using each item's `index` as the sort key).
+ * Panel-of-entities stage layout.
+ * Orchestrator sits at top-center (smaller card); four specialists fill a
+ * 4-column grid below, with SVG arcs overlaid for fresh inter-agent messages.
  */
 export default function LiveFeed({ state }: { state: LiveFeedState }) {
-  // Build an interleaved timeline:
-  //   - one card per agent that has any state
-  //   - chat bubbles inserted at their event index
-  // For agents, "first-seen" index is the smallest index of any of their
-  // events (currentTask / thinking / tool / observation).
-  type Item =
-    | { kind: "agent"; agent: AgentName; index: number }
-    | { kind: "bubble"; index: number; from: AgentName; to: AgentName; content: string };
-
-  const items: Item[] = [];
-
-  for (const agent of AGENT_ORDER) {
-    const a = state.agents[agent];
-    if (a.state === "idle") continue;
-    const idx = Math.min(
-      ...a.activeTools.map((t) => t.index),
-      ...a.observations.map((o) => o.index),
-      // Fallback: order by AGENT_ORDER position if no events have indices.
-      AGENT_ORDER.indexOf(agent) * 1000,
-    );
-    items.push({ kind: "agent", agent, index: isFinite(idx) ? idx : 0 });
-  }
-
-  for (const c of state.conversation) {
-    items.push({
-      kind: "bubble",
-      index: c.index,
-      from: c.from,
-      to: c.to,
-      content: c.content,
-    });
-  }
-
-  items.sort((a, b) => a.index - b.index);
-
   return (
-    <div className="h-full flex flex-col">
-      <FeedHeader state={state} />
-      <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-3.5">
-        {items.length === 0 && (
-          <div className="text-meta italic">Waiting for agents to start…</div>
-        )}
-        {items.map((it, i) =>
-          it.kind === "agent" ? (
-            <AgentCard
-              key={`agent-${it.agent}-${i}`}
-              agent={it.agent}
-              state={state.agents[it.agent]}
-            />
-          ) : (
-            <ChatBubble
-              key={`bubble-${i}`}
-              from={it.from}
-              to={it.to}
-              content={it.content}
-            />
-          ),
-        )}
-        {state.isDone && state.finalTrip && (
-          <div className="agent-card">
-            <div className="agent-portrait is-finished">
-              <span className="text-display text-2xl">✓</span>
-            </div>
-            <div className="flex-1">
-              <div className="text-eyebrow text-stone-700">Trip ready</div>
-              <div className="text-sm text-stone-700 leading-snug mt-1">
-                {state.finalTrip.days.length} days · {state.tripDays.length}{" "}
-                stops · share at <code>/t/{state.finalTrip.id}</code>
-              </div>
-            </div>
-          </div>
-        )}
+    <div
+      style={{
+        flex: 1,
+        display: "flex",
+        flexDirection: "column",
+        padding: "18px 22px 20px",
+        gap: 14,
+        overflow: "hidden",
+        background: "#fafaf7",
+      }}
+    >
+      <StageHeader state={state} />
+
+      {/* Orchestrator — solo, centered, narrower */}
+      <div style={{ display: "flex", justifyContent: "center" }}>
+        <div style={{ width: 220 }}>
+          <AgentCard
+            agent="orchestrator"
+            state={state.agents.orchestrator}
+            isOrchestrator
+          />
+        </div>
+      </div>
+
+      {/* Specialists — 4-column grid with arc overlay */}
+      <div
+        style={{
+          flex: 1,
+          display: "grid",
+          gridTemplateColumns: "repeat(4, 1fr)",
+          gap: 10,
+          position: "relative",
+          minHeight: 0,
+        }}
+      >
+        {/* Inter-agent arc overlay — fresh messages only */}
+        <InterAgentArcOverlay messages={state.recentMessages} />
+
+        {SPECIALIST_ORDER.map((agent) => (
+          <AgentCard
+            key={agent}
+            agent={agent}
+            state={state.agents[agent]}
+          />
+        ))}
       </div>
     </div>
   );
 }
 
-function FeedHeader({ state }: { state: LiveFeedState }) {
+function StageHeader({ state }: { state: LiveFeedState }) {
   return (
-    <div className="px-5 pt-4 pb-2 border-b border-stone-200/70">
-      <div className="flex items-center justify-between mb-2">
-        <div className="text-eyebrow">Live agent feed</div>
+    <div>
+      <div
+        style={{
+          fontFamily: "Georgia, serif",
+          fontStyle: "italic",
+          fontSize: 16,
+          color: "#1c1917",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
+        <span>The cast — currently planning your trip</span>
         {state.currentPhase && (
-          <div className="surface-pill text-xs px-2.5 py-1 inline-flex items-center gap-2">
-            <span
-              className="w-2 h-2 rounded-full"
-              style={{
-                background: phaseColor(state.currentPhase),
-                animation: state.isDone
-                  ? undefined
-                  : "spot-pulse 1.4s var(--ease-soft) infinite",
-              }}
-            />
-            <span className="capitalize font-medium">{state.currentPhase}</span>
-          </div>
+          <PhaseChip phase={state.currentPhase} isDone={state.isDone} />
         )}
       </div>
-      <div className="flex gap-1.5">
-        {AGENT_ORDER.map((a) => {
-          const Icon = agentIcon(a);
-          const s = state.agents[a];
-          const active = s.state === "active" || s.state === "thinking";
-          const finished = s.state === "finished";
-          return (
-            <div
-              key={a}
-              className="w-7 h-7 rounded-full surface-pill flex items-center justify-center transition-all ease-soft"
-              style={{
-                color:
-                  active || finished ? AGENT_COLOR[a] : "#a8a29e",
-                opacity: s.state === "idle" ? 0.35 : 1,
-                boxShadow: active
-                  ? `0 0 0 3px ${AGENT_COLOR[a]}26`
-                  : undefined,
-              }}
-              title={`${AGENT_LABEL[a]} — ${s.state}`}
-            >
-              <Icon size={16} />
-            </div>
-          );
-        })}
+      <div
+        style={{
+          fontSize: 11,
+          color: "#78716c",
+          marginTop: 2,
+        }}
+      >
+        Each box is a mini-dashboard for one entity. Lines appear during live Q&amp;A.
       </div>
+    </div>
+  );
+}
+
+function PhaseChip({
+  phase,
+  isDone,
+}: {
+  phase: NonNullable<LiveFeedState["currentPhase"]>;
+  isDone: boolean;
+}) {
+  const color = phaseColor(phase);
+  return (
+    <div
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 8,
+        background: "rgba(255,255,255,0.85)",
+        backdropFilter: "blur(10px)",
+        border: "1px solid rgba(231,229,228,0.7)",
+        borderRadius: 999,
+        padding: "6px 14px",
+        fontSize: 12,
+      }}
+    >
+      <span
+        style={{
+          width: 8,
+          height: 8,
+          borderRadius: "50%",
+          background: color,
+          animation: isDone ? undefined : "spot-pulse 1.4s cubic-bezier(0.32,0.72,0.3,1) infinite",
+        }}
+      />
+      <span style={{ fontWeight: 500, textTransform: "capitalize" }}>{phase}</span>
     </div>
   );
 }

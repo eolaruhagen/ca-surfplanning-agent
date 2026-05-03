@@ -1,9 +1,13 @@
 type IconProps = { className?: string; size?: number };
 
-export default function ReconIcon({ className, size = 24 }: IconProps) {
+/**
+ * Recon — binocular-wielding figure with surf lines in the distance.
+ * From the v5 mockup character SVG.
+ */
+export default function ReconIcon({ className, size = 64 }: IconProps) {
   return (
     <svg
-      viewBox="0 0 24 24"
+      viewBox="0 0 80 80"
       width={size}
       height={size}
       fill="none"
@@ -14,15 +18,20 @@ export default function ReconIcon({ className, size = 24 }: IconProps) {
       className={className}
       aria-hidden="true"
     >
-      {/* binoculars */}
-      <circle cx="8" cy="9" r="2.6" />
-      <circle cx="15" cy="9" r="2.6" />
-      <path d="M10.6 9 h1.8" />
-      {/* figure / bluff */}
-      <path d="M8 11.6 v3.4 M15 11.6 v3.4" />
-      <path d="M3 20 q4 -3 9 -3 t9 3" />
-      {/* distant wave lines */}
-      <path d="M3 6 q2 -1.2 4 0 t4 0" opacity="0.7" />
+      <circle cx="34" cy="18" r="5" />
+      <circle cx="31" cy="18" r="2" />
+      <circle cx="37" cy="18" r="2" />
+      <path d="M 33 18 L 35 18" />
+      <path d="M 34 23 L 34 48" />
+      <path d="M 28 30 L 34 28 L 40 30" />
+      <path d="M 28 22 L 30 18" />
+      <path d="M 40 22 L 38 18" />
+      <path d="M 34 48 L 30 64" />
+      <path d="M 34 48 L 38 64" />
+      <path d="M 8 64 L 26 64 L 30 60 L 44 60 L 48 64 L 72 64" />
+      <path d="M 50 28 q 4 -2 8 0 t 8 0 t 8 0" />
+      <path d="M 52 32 q 4 -2 6 0 t 6 0 t 6 0" />
+      <path d="M 56 38 q -2 -8 4 -14 q 6 0 4 14 q 0 16 -4 22 q -4 -6 -4 -22 z" />
     </svg>
   );
 }

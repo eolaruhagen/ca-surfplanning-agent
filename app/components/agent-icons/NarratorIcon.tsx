@@ -1,9 +1,13 @@
 type IconProps = { className?: string; size?: number };
 
-export default function NarratorIcon({ className, size = 24 }: IconProps) {
+/**
+ * Narrator — figure at a microphone / speech podium with scroll and quill.
+ * From the v5 mockup character SVG.
+ */
+export default function NarratorIcon({ className, size = 64 }: IconProps) {
   return (
     <svg
-      viewBox="0 0 24 24"
+      viewBox="0 0 80 80"
       width={size}
       height={size}
       fill="none"
@@ -14,14 +18,16 @@ export default function NarratorIcon({ className, size = 24 }: IconProps) {
       className={className}
       aria-hidden="true"
     >
-      {/* scroll body */}
-      <path d="M5 5 q2 7 0 14" />
-      <path d="M5 5 h11 q2 7 0 14 h-11" />
-      {/* inscribed wave line on the scroll */}
-      <path d="M7 12 q2 -1.4 4 0 t4 0" />
-      {/* quill */}
-      <path d="M15 4 l5 -2 l-1.6 5.6 z" />
-      <path d="M15 4 l3 3" />
+      <circle cx="34" cy="16" r="5" />
+      <path d="M 34 21 q -2 8 -2 14" />
+      <path d="M 26 36 q -8 12 -8 24" />
+      <path d="M 42 36 q 8 12 8 24" />
+      <path d="M 18 60 L 50 60" />
+      <path d="M 22 42 q -2 6 0 10 q 14 -1 26 0 q 2 -4 0 -10 q -14 1 -26 0 z" />
+      <path d="M 26 47 q 3 -2 6 0 t 6 0 t 6 0" />
+      <path d="M 36 26 L 50 30" />
+      <path d="M 50 30 L 60 22 L 62 30 z" />
+      <path d="M 56 26 L 50 32" />
     </svg>
   );
 }

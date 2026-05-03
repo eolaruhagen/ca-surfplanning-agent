@@ -38,16 +38,48 @@ export type DataObservation = {
 };
 
 export type AgentMessage = {
+  id: string;
   from: AgentName;
   to: AgentName;
   content: string;
+  kind: "handoff" | "question" | "answer" | "note";
+  correlation_id?: string;
+  timestamp: number;
   index: number;
 };
 
+export type ActiveConsultation = {
+  initiator: AgentName;
+  consultee: AgentName;
+  topic: string;
+  started_at: number;
+};
+
+/**
+ * UI-level lifecycle state for an agent card.
+ * Maps the backend's AgentLifecycleState + tool activity into a 5-way enum
+ * that drives visual treatment in the panel layout.
+ *
+ *   idle      — agent hasn't started yet
+ *   queued    — placeholder; waiting for the previous agent's handoff
+ *   thinking  — agent_thinking events arriving, no active tool
+ *   action    — tool_call in flight (unresolved)
+ *   done      — agent_finish received
+ */
+export type AgentPanelState = "idle" | "queued" | "thinking" | "action" | "done";
+
 export type AgentLifecycleState = "idle" | "active" | "thinking" | "finished";
+
+export type ConsultedByInfo = {
+  initiator: AgentName;
+  correlation_id: string;
+  topic: string;
+};
 
 export type AgentDerivedState = {
   state: AgentLifecycleState;
+  /** Derived 5-way panel state for visual rendering. */
+  panelState: AgentPanelState;
   currentTask?: string;
   /** Accumulates from `agent_thinking` events. */
   thinkingText?: string;
@@ -57,12 +89,18 @@ export type AgentDerivedState = {
   activeTools: ToolCallState[];
   /** Data observations attributed to this agent. */
   observations: DataObservation[];
+  /** Set when this agent is currently being consulted by another. */
+  consultedBy?: ConsultedByInfo;
 };
 
 export type LiveFeedState = {
   currentPhase: Phase | null;
   agents: Record<AgentName, AgentDerivedState>;
   conversation: AgentMessage[];
+  /** Active consultations keyed by correlation_id. */
+  activeConsultations: Map<string, ActiveConsultation>;
+  /** All inter-agent messages; arcs render freshness from timestamp. */
+  recentMessages: AgentMessage[];
   observations: DataObservation[];
   routeGeoJSON: GeoJSON.FeatureCollection | GeoJSON.Feature | null;
   highlightedSpotIds: string[];
@@ -82,16 +120,37 @@ const ALL_AGENTS: AgentName[] = [
   "narrator",
 ];
 
+function computePanelState(a: AgentDerivedState): AgentPanelState {
+  if (a.state === "finished") return "done";
+  if (a.state === "idle") return "idle";
+  // Check for in-flight tool calls.
+  const hasInFlightTool = a.activeTools.some((t) => !t.resolved);
+  if (hasInFlightTool) return "action";
+  if (a.state === "thinking") return "thinking";
+  // active but not yet thinking or acting — show "queued" for specialists
+  return "queued";
+}
+
+function emptyAgentState(): AgentDerivedState {
+  return {
+    state: "idle",
+    panelState: "idle",
+    activeTools: [],
+    observations: [],
+  };
+}
+
 function emptyAgents(): Record<AgentName, AgentDerivedState> {
   const m = {} as Record<AgentName, AgentDerivedState>;
   for (const a of ALL_AGENTS) {
-    m[a] = {
-      state: "idle",
-      activeTools: [],
-      observations: [],
-    };
+    m[a] = emptyAgentState();
   }
   return m;
+}
+
+let _msgCounter = 0;
+function nextMsgId(): string {
+  return `msg-${++_msgCounter}`;
 }
 
 /**
@@ -100,10 +159,13 @@ function emptyAgents(): Record<AgentName, AgentDerivedState> {
  * unit tests assert exact derived state from a fixture event array.
  */
 export function deriveLiveFeedState(events: readonly StreamEvent[]): LiveFeedState {
+  _msgCounter = 0;
   const state: LiveFeedState = {
     currentPhase: null,
     agents: emptyAgents(),
     conversation: [],
+    activeConsultations: new Map(),
+    recentMessages: [],
     observations: [],
     routeGeoJSON: null,
     highlightedSpotIds: [],
@@ -118,6 +180,11 @@ export function deriveLiveFeedState(events: readonly StreamEvent[]): LiveFeedSta
   // Track day_complete entries by day_number to dedupe & resolve coords later.
   const dayMarkers: TripDayMarker[] = [];
 
+  // Monotonically increasing synthetic timestamp for freshness computation.
+  // We don't have real wall-clock time in pure reducer, so we use index * 100ms
+  // as a proxy that gives arcs something to measure freshness against at render time.
+  const BASE_TS = Date.now();
+
   for (let i = 0; i < events.length; i++) {
     const ev = events[i];
     switch (ev.type) {
@@ -129,27 +196,62 @@ export function deriveLiveFeedState(events: readonly StreamEvent[]): LiveFeedSta
         const a = state.agents[ev.agent];
         a.state = "active";
         a.currentTask = ev.task;
+        a.panelState = computePanelState(a);
         break;
       }
       case "agent_thinking": {
         const a = state.agents[ev.agent];
         a.state = a.state === "finished" ? "finished" : "thinking";
         a.thinkingText = (a.thinkingText ?? "") + ev.text;
+        a.panelState = computePanelState(a);
         break;
       }
       case "agent_finish": {
         const a = state.agents[ev.agent];
         a.state = "finished";
         a.summary = ev.summary;
+        a.panelState = "done";
         break;
       }
       case "agent_message": {
-        state.conversation.push({
+        const kind = ev.kind ?? "handoff";
+        const msg: AgentMessage = {
+          id: nextMsgId(),
           from: ev.from,
           to: ev.to,
           content: ev.content,
+          kind,
+          correlation_id: ev.correlation_id,
+          timestamp: BASE_TS + i * 100,
           index: i,
+        };
+        state.conversation.push(msg);
+        state.recentMessages.push(msg);
+        break;
+      }
+      case "consultation_start": {
+        state.activeConsultations.set(ev.correlation_id, {
+          initiator: ev.initiator,
+          consultee: ev.consultee,
+          topic: ev.topic,
+          started_at: BASE_TS + i * 100,
         });
+        // Mark the consultee as being consulted.
+        const consultee = state.agents[ev.consultee];
+        consultee.consultedBy = {
+          initiator: ev.initiator,
+          correlation_id: ev.correlation_id,
+          topic: ev.topic,
+        };
+        break;
+      }
+      case "consultation_end": {
+        state.activeConsultations.delete(ev.correlation_id);
+        // Clear consultedBy on the consultee.
+        const consultee = state.agents[ev.consultee];
+        if (consultee.consultedBy?.correlation_id === ev.correlation_id) {
+          consultee.consultedBy = undefined;
+        }
         break;
       }
       case "tool_call": {
@@ -162,6 +264,7 @@ export function deriveLiveFeedState(events: readonly StreamEvent[]): LiveFeedSta
           index: i,
           resolved: false,
         });
+        a.panelState = "action";
         break;
       }
       case "tool_result": {
@@ -175,6 +278,8 @@ export function deriveLiveFeedState(events: readonly StreamEvent[]): LiveFeedSta
             break;
           }
         }
+        // Recompute panel state — may drop back from action to thinking.
+        a.panelState = computePanelState(a);
         break;
       }
       case "data_observed": {
@@ -248,6 +353,7 @@ export function deriveLiveFeedState(events: readonly StreamEvent[]): LiveFeedSta
         for (const a of ALL_AGENTS) {
           if (state.agents[a].state !== "idle") {
             state.agents[a].state = "finished";
+            state.agents[a].panelState = "done";
           }
         }
         break;

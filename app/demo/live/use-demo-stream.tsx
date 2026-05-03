@@ -296,7 +296,7 @@ export const DEMO_TIMELINE: DemoStep[] = [
     },
   },
 
-  // ===== 5–10s: Planning phase =====
+  // ===== 5–10s: Planning phase (with consultation demo punch) =====
   { atMs: 5300, event: { type: "phase", phase: "planning" } },
   {
     atMs: 5350,
@@ -333,8 +333,99 @@ export const DEMO_TIMELINE: DemoStep[] = [
       text: "Day 1 OB dawn → drive to HMB. Day 2 Steamer Lane → push south to Capitola. ",
     },
   },
+
+  // — Consultation: Planner checks Mavericks with Recon —
+  {
+    atMs: 6900,
+    event: {
+      type: "agent_thinking",
+      agent: "planner",
+      text: "Mavericks is expert-only — let me check with recon before booking it",
+    },
+  },
   {
     atMs: 7100,
+    event: {
+      type: "agent_message",
+      from: "planner",
+      to: "recon",
+      kind: "question",
+      correlation_id: "c1",
+      content:
+        "Recon, is Mavericks feasible for an intermediate surfer? The user's skill level is intermediate.",
+    },
+  },
+  {
+    atMs: 7150,
+    event: {
+      type: "consultation_start",
+      initiator: "planner",
+      consultee: "recon",
+      correlation_id: "c1",
+      topic: "Skill mismatch concern",
+    },
+  },
+  {
+    atMs: 7350,
+    event: {
+      type: "agent_thinking",
+      agent: "recon",
+      text: "Looking up Mavericks profile to answer planner's question",
+    },
+  },
+  {
+    atMs: 7600,
+    event: {
+      type: "tool_call",
+      agent: "recon",
+      name: "lookup_spot",
+      source: "local",
+      args: { id: "mavericks" },
+    },
+  },
+  {
+    atMs: 8000,
+    event: {
+      type: "tool_result",
+      agent: "recon",
+      name: "lookup_spot",
+      summary: "Mavericks: expert big-wave, 15–40ft, very dangerous",
+    },
+  },
+  {
+    atMs: 8150,
+    event: {
+      type: "agent_thinking",
+      agent: "recon",
+      text: "Confirmed — flag this as a mismatch, suggest Steamer Lane instead",
+    },
+  },
+  {
+    atMs: 8350,
+    event: {
+      type: "consultation_end",
+      initiator: "planner",
+      consultee: "recon",
+      correlation_id: "c1",
+      summary: "Advised against Mavericks; Steamer Lane is the safer alternate",
+    },
+  },
+  {
+    atMs: 8400,
+    event: {
+      type: "agent_message",
+      from: "recon",
+      to: "planner",
+      kind: "answer",
+      correlation_id: "c1",
+      content:
+        "Skip Mavericks — it's expert big-wave only (15–40ft). At intermediate, Steamer Lane is the right call for day 2.",
+    },
+  },
+
+  // — Planner continues post-consultation —
+  {
+    atMs: 8700,
     event: {
       type: "tool_call",
       agent: "planner",
@@ -344,7 +435,7 @@ export const DEMO_TIMELINE: DemoStep[] = [
     },
   },
   {
-    atMs: 7700,
+    atMs: 9200,
     event: {
       type: "tool_result",
       agent: "planner",
@@ -353,7 +444,7 @@ export const DEMO_TIMELINE: DemoStep[] = [
     },
   },
   {
-    atMs: 8000,
+    atMs: 9400,
     event: {
       type: "data_observed",
       agent: "planner",
@@ -362,28 +453,28 @@ export const DEMO_TIMELINE: DemoStep[] = [
     },
   },
   {
-    atMs: 8200,
+    atMs: 9500,
     event: {
       type: "day_complete",
       day: FINAL_TRIP.days[0],
     },
   },
   {
-    atMs: 8700,
+    atMs: 9700,
     event: {
       type: "day_complete",
       day: FINAL_TRIP.days[1],
     },
   },
   {
-    atMs: 9200,
+    atMs: 9900,
     event: {
       type: "day_complete",
       day: FINAL_TRIP.days[2],
     },
   },
   {
-    atMs: 9500,
+    atMs: 10100,
     event: {
       type: "agent_thinking",
       agent: "planner",
@@ -391,7 +482,7 @@ export const DEMO_TIMELINE: DemoStep[] = [
     },
   },
   {
-    atMs: 9900,
+    atMs: 10400,
     event: {
       type: "agent_finish",
       agent: "planner",
@@ -399,7 +490,7 @@ export const DEMO_TIMELINE: DemoStep[] = [
     },
   },
   {
-    atMs: 10100,
+    atMs: 10600,
     event: {
       type: "agent_message",
       from: "planner",
@@ -409,10 +500,10 @@ export const DEMO_TIMELINE: DemoStep[] = [
     },
   },
 
-  // ===== 10–15s: Narration phase =====
-  { atMs: 10400, event: { type: "phase", phase: "narration" } },
+  // ===== 10.7–15s: Narration phase =====
+  { atMs: 10700, event: { type: "phase", phase: "narration" } },
   {
-    atMs: 10500,
+    atMs: 10800,
     event: {
       type: "agent_start",
       agent: "narrator",

@@ -80,6 +80,7 @@ describe("deriveLiveFeedState — agent_thinking", () => {
     const s = deriveLiveFeedState(events);
     assert.equal(s.agents.recon.thinkingText, "The peak swell looks clean.");
     assert.equal(s.agents.recon.state, "thinking");
+    assert.equal(s.agents.recon.panelState, "thinking");
   });
 });
 
@@ -121,6 +122,44 @@ describe("deriveLiveFeedState — tool_call + tool_result pairing", () => {
     const s = deriveLiveFeedState(events);
     assert.equal(s.agents.recon.activeTools.length, 1);
     assert.equal(s.agents.recon.activeTools[0].resolved, false);
+  });
+
+  it("panelState is 'action' while a tool_call is unresolved", () => {
+    const events: StreamEvent[] = [
+      { type: "agent_start", agent: "planner", task: "plan" },
+      {
+        type: "tool_call",
+        agent: "planner",
+        name: "directions",
+        source: "mcp:google-maps",
+        args: {},
+      },
+    ];
+    const s = deriveLiveFeedState(events);
+    assert.equal(s.agents.planner.panelState, "action");
+  });
+
+  it("panelState returns to 'thinking' once all tools resolve", () => {
+    const events: StreamEvent[] = [
+      { type: "agent_start", agent: "planner", task: "plan" },
+      { type: "agent_thinking", agent: "planner", text: "Checking route" },
+      {
+        type: "tool_call",
+        agent: "planner",
+        name: "directions",
+        source: "mcp:google-maps",
+        args: {},
+      },
+      {
+        type: "tool_result",
+        agent: "planner",
+        name: "directions",
+        summary: "75 mi",
+      },
+    ];
+    const s = deriveLiveFeedState(events);
+    // All tools resolved + last state was thinking → back to thinking.
+    assert.equal(s.agents.planner.panelState, "thinking");
   });
 });
 
@@ -211,6 +250,7 @@ describe("deriveLiveFeedState — agent_finish", () => {
     const s = deriveLiveFeedState(events);
     assert.equal(s.agents.vision.state, "finished");
     assert.equal(s.agents.vision.summary, "2 boards identified");
+    assert.equal(s.agents.vision.panelState, "done");
   });
 });
 
@@ -224,6 +264,238 @@ describe("deriveLiveFeedState — agent_message", () => {
     assert.equal(s.conversation.length, 2);
     assert.equal(s.conversation[0].from, "recon");
     assert.equal(s.conversation[1].to, "narrator");
+  });
+
+  it("defaults kind to 'handoff' when absent", () => {
+    const events: StreamEvent[] = [
+      { type: "agent_message", from: "recon", to: "planner", content: "handoff" },
+    ];
+    const s = deriveLiveFeedState(events);
+    assert.equal(s.conversation[0].kind, "handoff");
+  });
+
+  it("preserves kind 'question' and correlation_id", () => {
+    const events: StreamEvent[] = [
+      {
+        type: "agent_message",
+        from: "planner",
+        to: "recon",
+        content: "Is Mavericks safe?",
+        kind: "question",
+        correlation_id: "c1",
+      },
+    ];
+    const s = deriveLiveFeedState(events);
+    assert.equal(s.conversation[0].kind, "question");
+    assert.equal(s.conversation[0].correlation_id, "c1");
+  });
+
+  it("populates recentMessages alongside conversation", () => {
+    const events: StreamEvent[] = [
+      { type: "agent_message", from: "recon", to: "planner", content: "Found 18" },
+    ];
+    const s = deriveLiveFeedState(events);
+    assert.equal(s.recentMessages.length, 1);
+    assert.equal(s.recentMessages[0].from, "recon");
+  });
+
+  it("correlates paired question+answer in recentMessages", () => {
+    const events: StreamEvent[] = [
+      {
+        type: "agent_message",
+        from: "planner",
+        to: "recon",
+        content: "Is Mavericks safe?",
+        kind: "question",
+        correlation_id: "c1",
+      },
+      {
+        type: "agent_message",
+        from: "recon",
+        to: "planner",
+        content: "Skip Mavericks.",
+        kind: "answer",
+        correlation_id: "c1",
+      },
+    ];
+    const s = deriveLiveFeedState(events);
+    assert.equal(s.recentMessages.length, 2);
+    const q = s.recentMessages.find((m) => m.kind === "question");
+    const a = s.recentMessages.find((m) => m.kind === "answer");
+    assert.ok(q && a);
+    assert.equal(q.correlation_id, "c1");
+    assert.equal(a.correlation_id, "c1");
+  });
+});
+
+describe("deriveLiveFeedState — consultation_start / consultation_end", () => {
+  it("consultation_start adds to activeConsultations and sets consultedBy on consultee", () => {
+    const events: StreamEvent[] = [
+      {
+        type: "consultation_start",
+        initiator: "planner",
+        consultee: "recon",
+        correlation_id: "c1",
+        topic: "Skill mismatch concern",
+      },
+    ];
+    const s = deriveLiveFeedState(events);
+    assert.equal(s.activeConsultations.size, 1);
+    const consultation = s.activeConsultations.get("c1");
+    assert.ok(consultation);
+    assert.equal(consultation.initiator, "planner");
+    assert.equal(consultation.consultee, "recon");
+    assert.equal(consultation.topic, "Skill mismatch concern");
+
+    // Consultee has consultedBy set.
+    assert.ok(s.agents.recon.consultedBy);
+    assert.equal(s.agents.recon.consultedBy.initiator, "planner");
+    assert.equal(s.agents.recon.consultedBy.correlation_id, "c1");
+    assert.equal(s.agents.recon.consultedBy.topic, "Skill mismatch concern");
+
+    // Initiator (planner) does NOT get consultedBy.
+    assert.equal(s.agents.planner.consultedBy, undefined);
+  });
+
+  it("consultation_end removes from activeConsultations and clears consultedBy", () => {
+    const events: StreamEvent[] = [
+      {
+        type: "consultation_start",
+        initiator: "planner",
+        consultee: "recon",
+        correlation_id: "c1",
+        topic: "Skill mismatch concern",
+      },
+      {
+        type: "consultation_end",
+        initiator: "planner",
+        consultee: "recon",
+        correlation_id: "c1",
+        summary: "Advised against Mavericks",
+      },
+    ];
+    const s = deriveLiveFeedState(events);
+    assert.equal(s.activeConsultations.size, 0);
+    assert.equal(s.agents.recon.consultedBy, undefined);
+  });
+
+  it("full consultation sequence: question → start → mini-run → end → answer", () => {
+    const events: StreamEvent[] = [
+      {
+        type: "agent_message",
+        from: "planner",
+        to: "recon",
+        kind: "question",
+        correlation_id: "c1",
+        content: "Is Mavericks safe at intermediate?",
+      },
+      {
+        type: "consultation_start",
+        initiator: "planner",
+        consultee: "recon",
+        correlation_id: "c1",
+        topic: "Skill mismatch concern",
+      },
+      {
+        type: "agent_thinking",
+        agent: "recon",
+        text: "Looking up Mavericks...",
+      },
+      {
+        type: "tool_call",
+        agent: "recon",
+        name: "lookup_spot",
+        source: "local",
+        args: { id: "mavericks" },
+      },
+      {
+        type: "tool_result",
+        agent: "recon",
+        name: "lookup_spot",
+        summary: "Mavericks: expert big-wave",
+      },
+      {
+        type: "consultation_end",
+        initiator: "planner",
+        consultee: "recon",
+        correlation_id: "c1",
+        summary: "Advised against; try Steamer Lane",
+      },
+      {
+        type: "agent_message",
+        from: "recon",
+        to: "planner",
+        kind: "answer",
+        correlation_id: "c1",
+        content: "Skip Mavericks — try Steamer Lane instead",
+      },
+    ];
+    const s = deriveLiveFeedState(events);
+
+    // After end: consultation closed.
+    assert.equal(s.activeConsultations.size, 0);
+    assert.equal(s.agents.recon.consultedBy, undefined);
+
+    // Two messages in conversation (question + answer).
+    assert.equal(s.conversation.length, 2);
+    assert.equal(s.conversation[0].kind, "question");
+    assert.equal(s.conversation[1].kind, "answer");
+
+    // recentMessages has both.
+    assert.equal(s.recentMessages.length, 2);
+
+    // Recon ran its mini-loop tool.
+    assert.equal(s.agents.recon.activeTools.length, 1);
+    assert.equal(s.agents.recon.activeTools[0].resolved, true);
+  });
+
+  it("multiple simultaneous consultations can be tracked independently", () => {
+    const events: StreamEvent[] = [
+      {
+        type: "consultation_start",
+        initiator: "planner",
+        consultee: "recon",
+        correlation_id: "c1",
+        topic: "Topic A",
+      },
+      {
+        type: "consultation_start",
+        initiator: "planner",
+        consultee: "vision",
+        correlation_id: "c2",
+        topic: "Topic B",
+      },
+    ];
+    const s = deriveLiveFeedState(events);
+    assert.equal(s.activeConsultations.size, 2);
+    assert.ok(s.activeConsultations.has("c1"));
+    assert.ok(s.activeConsultations.has("c2"));
+  });
+});
+
+describe("deriveLiveFeedState — panelState derivation", () => {
+  it("starts idle", () => {
+    const s = deriveLiveFeedState([]);
+    for (const agent of ["vision", "recon", "planner", "narrator"] as const) {
+      assert.equal(s.agents[agent].panelState, "idle");
+    }
+  });
+
+  it("panelState is 'queued' when active but not yet thinking or acting", () => {
+    const events: StreamEvent[] = [
+      { type: "agent_start", agent: "narrator", task: "Write trip" },
+    ];
+    const s = deriveLiveFeedState(events);
+    assert.equal(s.agents.narrator.panelState, "queued");
+  });
+
+  it("panelState is 'done' after agent_finish", () => {
+    const events: StreamEvent[] = [
+      { type: "agent_start", agent: "vision", task: "ID boards" },
+      { type: "agent_finish", agent: "vision", summary: "done" },
+    ];
+    const s = deriveLiveFeedState(events);
+    assert.equal(s.agents.vision.panelState, "done");
   });
 });
 

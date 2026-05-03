@@ -88,10 +88,80 @@ describe("DEMO_TIMELINE — applied in order yields a coherent state", () => {
     // routeGeoJSON present (sourced from the trip).
     assert.ok(state.routeGeoJSON);
 
-    // Two inter-agent handoff messages.
-    assert.equal(state.conversation.length, 2);
-    assert.equal(state.conversation[0].from, "recon");
-    assert.equal(state.conversation[1].from, "planner");
+    // Inter-agent messages: recon→planner handoff + Q/A pair (c1) + planner→narrator handoff = 4 total.
+    assert.equal(state.conversation.length, 4);
+    const handoffs = state.conversation.filter((m) => m.kind === "handoff");
+    assert.equal(handoffs.length, 2, "two handoff messages");
+    assert.equal(handoffs[0].from, "recon");
+    assert.equal(handoffs[1].from, "planner");
+
+    // After the full timeline the consultation is closed.
+    assert.equal(state.activeConsultations.size, 0);
+    assert.equal(state.agents.recon.consultedBy, undefined);
+  });
+});
+
+describe("DEMO_TIMELINE — consultation sequence", () => {
+  it("consultation_start and consultation_end fire in correct order", () => {
+    const consultationSteps = DEMO_TIMELINE.filter(
+      (s) =>
+        s.event.type === "consultation_start" ||
+        s.event.type === "consultation_end",
+    );
+    assert.equal(consultationSteps.length, 2, "one start + one end");
+    assert.equal(consultationSteps[0].event.type, "consultation_start");
+    assert.equal(consultationSteps[1].event.type, "consultation_end");
+  });
+
+  it("question fires before consultation_start", () => {
+    const questionStep = DEMO_TIMELINE.find(
+      (s) => s.event.type === "agent_message" && s.event.type === "agent_message" &&
+        (s.event as { kind?: string }).kind === "question",
+    );
+    const startStep = DEMO_TIMELINE.find((s) => s.event.type === "consultation_start");
+    assert.ok(questionStep, "question message exists");
+    assert.ok(startStep, "consultation_start exists");
+    assert.ok(questionStep.atMs <= startStep.atMs, "question fires before or at consultation_start");
+  });
+
+  it("answer fires after consultation_end", () => {
+    const answerStep = DEMO_TIMELINE.find(
+      (s) => s.event.type === "agent_message" &&
+        (s.event as { kind?: string }).kind === "answer",
+    );
+    const endStep = DEMO_TIMELINE.find((s) => s.event.type === "consultation_end");
+    assert.ok(answerStep, "answer message exists");
+    assert.ok(endStep, "consultation_end exists");
+    assert.ok(answerStep.atMs >= endStep.atMs, "answer fires after consultation_end");
+  });
+
+  it("question and answer share correlation_id 'c1'", () => {
+    const q = DEMO_TIMELINE.find(
+      (s) => s.event.type === "agent_message" &&
+        (s.event as { kind?: string }).kind === "question",
+    );
+    const a = DEMO_TIMELINE.find(
+      (s) => s.event.type === "agent_message" &&
+        (s.event as { kind?: string }).kind === "answer",
+    );
+    assert.ok(q && a);
+    if (q.event.type === "agent_message" && a.event.type === "agent_message") {
+      assert.equal(q.event.correlation_id, "c1");
+      assert.equal(a.event.correlation_id, "c1");
+    }
+  });
+
+  it("mid-consultation state: recon is marked as consultedBy planner", () => {
+    // Only replay up through consultation_start.
+    const startIndex = DEMO_TIMELINE.findIndex(
+      (s) => s.event.type === "consultation_start",
+    );
+    const partialEvents = DEMO_TIMELINE.slice(0, startIndex + 1).map((s) => s.event);
+    const state = deriveLiveFeedState(partialEvents);
+    assert.ok(state.agents.recon.consultedBy);
+    assert.equal(state.agents.recon.consultedBy?.initiator, "planner");
+    assert.equal(state.agents.recon.consultedBy?.correlation_id, "c1");
+    assert.equal(state.activeConsultations.size, 1);
   });
 });
 
