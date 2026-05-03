@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { extractRouteFeatures } from "./route";
+import { extractRouteFeatures } from "./route-utils";
 
 describe("extractRouteFeatures", () => {
   it("returns null for nullish / non-object input", () => {

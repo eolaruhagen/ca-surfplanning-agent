@@ -13,7 +13,7 @@ import type { Feature, FeatureCollection } from "geojson";
 
 import type { Trip } from "@/lib/types";
 import { buildCaliforniaMask } from "@/app/components/map/buildMask";
-import { extractRouteFeatures } from "./helpers/route";
+import { extractRouteFeatures } from "./helpers/route-utils";
 import { shouldDoInitialFly } from "./helpers/auto-advance";
 import { useTripView } from "./hook";
 import SpeechBubble from "./speech-bubble";
