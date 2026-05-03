@@ -9,6 +9,7 @@
     "lint": "eslint",
     "test": "tsx --test 'tests/*.test.ts' 'app/**/*.test.ts' 'app/**/*.test.tsx' 'lib/**/*.test.ts' 'lib/**/*.test.tsx'",
     "test:integration": "SURFPLANNER_INTEGRATION=1 tsx --test tests/integration/*.integration.test.ts",
+    "smoke": "SURFPLANNER_SMOKE=1 node --env-file-if-exists=.env.local --test-force-exit --import tsx --test tests/integration/plan-pipeline.smoke.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
