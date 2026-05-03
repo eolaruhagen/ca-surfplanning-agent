@@ -44,6 +44,7 @@ interface GeoPickMapProps {
 export default function GeoPickMap({ variant, point, onPick }: GeoPickMapProps) {
   const { state, handleMapClick, clear } = useGeoPick(onPick);
   const [boundary, setBoundary] = useState<FeatureCollection | Feature | null>(null);
+  const [mapReady, setMapReady] = useState(false);
 
   // Load CA boundary for mask + outline
   useEffect(() => {
@@ -81,6 +82,7 @@ export default function GeoPickMap({ variant, point, onPick }: GeoPickMapProps) 
   }, [state.bbox]);
 
   const pinColor = variant === "start" ? "#16a34a" : "#dc2626"; // green : red
+  const layerPrefix = `geo-${variant}`;
 
   return (
     <div className="relative w-full h-full">
@@ -113,14 +115,15 @@ export default function GeoPickMap({ variant, point, onPick }: GeoPickMapProps) 
         mapStyle="mapbox://styles/mapbox/light-v11"
         style={{ width: "100%", height: "100%" }}
         onClick={handleMapClick}
+        onLoad={() => setMapReady(true)}
       >
         <NavigationControl position="bottom-right" showCompass={false} />
 
         {/* CA mask */}
-        {mask && (
-          <Source id="geo-ca-mask" type="geojson" data={mask}>
+        {mapReady && mask && (
+          <Source id={`${layerPrefix}-ca-mask`} type="geojson" data={mask}>
             <Layer
-              id="geo-ca-mask-fill"
+              id={`${layerPrefix}-ca-mask-fill`}
               type="fill"
               paint={{ "fill-color": "#fafaf7", "fill-opacity": 0.85 }}
             />
@@ -128,10 +131,14 @@ export default function GeoPickMap({ variant, point, onPick }: GeoPickMapProps) 
         )}
 
         {/* CA outline */}
-        {boundary && (
-          <Source id="geo-ca-outline" type="geojson" data={boundary as FeatureCollection}>
+        {mapReady && boundary && (
+          <Source
+            id={`${layerPrefix}-ca-outline`}
+            type="geojson"
+            data={boundary as FeatureCollection}
+          >
             <Layer
-              id="geo-ca-outline-line"
+              id={`${layerPrefix}-ca-outline-line`}
               type="line"
               paint={{ "line-color": "#1c1917", "line-width": 1, "line-opacity": 0.5 }}
             />
@@ -139,10 +146,10 @@ export default function GeoPickMap({ variant, point, onPick }: GeoPickMapProps) 
         )}
 
         {/* Bbox fill + line overlay */}
-        {bboxGeoJSON && (
-          <Source id="geo-bbox" type="geojson" data={bboxGeoJSON}>
+        {mapReady && bboxGeoJSON && (
+          <Source id={`${layerPrefix}-bbox`} type="geojson" data={bboxGeoJSON}>
             <Layer
-              id="geo-bbox-fill"
+              id={`${layerPrefix}-bbox-fill`}
               type="fill"
               paint={{
                 "fill-color": pinColor,
@@ -150,7 +157,7 @@ export default function GeoPickMap({ variant, point, onPick }: GeoPickMapProps) 
               }}
             />
             <Layer
-              id="geo-bbox-line"
+              id={`${layerPrefix}-bbox-line`}
               type="line"
               paint={{
                 "line-color": pinColor,
@@ -163,7 +170,7 @@ export default function GeoPickMap({ variant, point, onPick }: GeoPickMapProps) 
         )}
 
         {/* Pin marker */}
-        {state.pin && (
+        {mapReady && state.pin && (
           <Marker
             longitude={state.pin[0]}
             latitude={state.pin[1]}

@@ -2,6 +2,20 @@ import { tool, type ToolSet } from 'ai';
 import { z } from 'zod';
 import type { AgentName, Session, TripDay, SendEvent } from '@/lib/types';
 
+const ForecastSnapshotInputSchema = z
+  .object({
+    spot_id: z.string().optional(),
+    datetime: z.string().optional(),
+    swell_height_ft: z.coerce.number().optional(),
+    swell_direction_deg: z.coerce.number().optional(),
+    swell_period_sec: z.coerce.number().optional(),
+    swell_peak_period_sec: z.coerce.number().optional(),
+    wind_speed_mph: z.coerce.number().optional(),
+    wind_direction_deg: z.coerce.number().optional(),
+    combined_wave_height_ft: z.coerce.number().optional(),
+  })
+  .partial();
+
 export type RecordedPlan = {
   days: Map<number, TripDay>;
 };
@@ -52,11 +66,12 @@ export function recordTools(
           .describe('Short tagline for the per-spot animation, e.g. "Peak swell window — 5ft @ 14s, light offshore"'),
         reasoning: z.string().describe('Long-form reasoning for the summary doc'),
         fit_score: z.number(),
-        forecast_snapshot: z.record(z.string(), z.unknown()).optional(),
+        forecast_snapshot: ForecastSnapshotInputSchema.optional(),
       }),
       execute: async (args) => {
         sendEvent({ type: 'tool_call', agent, name: 'record_session', source: 'local', args });
         const day = ensureDay(plan, args.day_number, args.date);
+        const parsedSnapshot = ForecastSnapshotInputSchema.safeParse(args.forecast_snapshot ?? {});
         const session: Session = {
           time_window: args.time_window,
           spot_id: args.spot_id,
@@ -66,7 +81,7 @@ export function recordTools(
           pick_reason: args.pick_reason,
           reasoning: args.reasoning,
           fit_score: args.fit_score,
-          forecast_snapshot: (args.forecast_snapshot ?? {}) as Session['forecast_snapshot'],
+          forecast_snapshot: (parsedSnapshot.success ? parsedSnapshot.data : {}) as Session['forecast_snapshot'],
         };
         day.sessions.push(session);
         sendEvent({
