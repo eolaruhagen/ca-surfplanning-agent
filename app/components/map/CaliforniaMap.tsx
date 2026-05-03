@@ -123,7 +123,7 @@ export default function CaliforniaMap(props: CaliforniaMapProps) {
   }, [spots]);
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden">
+    <div className="relative h-full w-full overflow-hidden">
       {/* Header */}
       {header !== null && (
         <div className="absolute top-0 left-0 right-0 z-30 pointer-events-none">

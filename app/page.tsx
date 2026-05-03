@@ -15,5 +15,9 @@ const CaliforniaMap = dynamic(
 );
 
 export default function Home() {
-  return <CaliforniaMap />;
+  return (
+    <div className="h-screen w-screen">
+      <CaliforniaMap />
+    </div>
+  );
 }
