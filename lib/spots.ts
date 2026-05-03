@@ -50,7 +50,12 @@ export type TripDayMarker = {
 
 export type MapOverlay = {
   selectedSpotId?: string | null;
+  /** Dim every non-listed spot to ~35% opacity. */
   highlightedSpotIds?: string[];
+  /** Add a brief pulse animation to these spots (e.g. just-scored). */
+  pulsedSpotIds?: string[];
+  /** Render a small score badge over the spot. Keyed by spot id. */
+  spotScores?: Record<string, number>;
   tripDays?: TripDayMarker[];
   routeGeoJSON?: GeoJSON.FeatureCollection | GeoJSON.Feature | null;
 };

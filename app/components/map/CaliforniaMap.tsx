@@ -110,6 +110,18 @@ export default function CaliforniaMap(props: CaliforniaMapProps) {
     return new Set(set);
   }, [overlay?.highlightedSpotIds]);
 
+  const pulsed = useMemo(() => {
+    const set = overlay?.pulsedSpotIds;
+    if (!set || set.length === 0) return null;
+    return new Set(set);
+  }, [overlay?.pulsedSpotIds]);
+
+  const spotById = useMemo(() => {
+    const m = new Map<string, Spot>();
+    for (const s of spots) m.set(s.id, s);
+    return m;
+  }, [spots]);
+
   return (
     <div className="relative h-screen w-screen overflow-hidden">
       {/* Header */}
@@ -225,6 +237,7 @@ export default function CaliforniaMap(props: CaliforniaMapProps) {
         {spots.map((s) => {
           const isSelected = s.id === effectiveSelectedId;
           const isDimmed = dimmed ? !dimmed.has(s.id) : false;
+          const isPulsing = pulsed ? pulsed.has(s.id) : false;
           return (
             <Marker
               key={s.id}
@@ -239,10 +252,50 @@ export default function CaliforniaMap(props: CaliforniaMapProps) {
               <div
                 className={`spot-dot${isSelected ? " is-selected" : ""}${
                   isDimmed ? " is-dimmed" : ""
-                }`}
+                }${isPulsing ? " is-pulsing" : ""}`}
                 style={{ background: skillColor(s.skill_level) }}
                 aria-label={s.name}
               />
+            </Marker>
+          );
+        })}
+
+        {/* Score badges — sibling markers, slight pixel offset via CSS */}
+        {overlay?.spotScores &&
+          Object.entries(overlay.spotScores).map(([spotId, score]) => {
+            const spot = spotById.get(spotId);
+            if (!spot) return null;
+            return (
+              <Marker
+                key={`score-${spotId}`}
+                longitude={spot.lon}
+                latitude={spot.lat}
+                anchor="center"
+              >
+                <div className="spot-score-badge" aria-hidden>
+                  {score}
+                </div>
+              </Marker>
+            );
+          })}
+
+        {/* Day-stop markers — numbered dark circles for trip itinerary */}
+        {overlay?.tripDays?.map((td) => {
+          const spot = spotById.get(td.spotId);
+          if (!spot) return null;
+          return (
+            <Marker
+              key={`day-${td.dayIndex}-${td.spotId}`}
+              longitude={spot.lon}
+              latitude={spot.lat}
+              anchor="center"
+            >
+              <div
+                className="day-stop-marker"
+                title={td.label ?? `Day ${td.dayIndex}`}
+              >
+                {td.dayIndex}
+              </div>
             </Marker>
           );
         })}
