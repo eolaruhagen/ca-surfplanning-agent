@@ -8,6 +8,7 @@ import {
   Source,
   Layer,
 } from "react-map-gl/mapbox";
+import type { MapRef } from "react-map-gl/mapbox";
 import type { Feature, FeatureCollection } from "geojson";
 
 import {
@@ -45,6 +46,8 @@ export type CaliforniaMapProps = {
   showSpotDetail?: boolean;
   /** Override the page header. Pass null to hide. */
   header?: React.ReactNode;
+  /** Called once when the Mapbox MapRef is ready. Use for imperative flyTo / terrain. */
+  onMapReady?: (map: MapRef) => void;
 };
 
 const MAPBOX_TOKEN =
@@ -70,6 +73,7 @@ export default function CaliforniaMap(props: CaliforniaMapProps) {
     showSpotList = true,
     showSpotDetail = true,
     header,
+    onMapReady,
   } = props;
 
   const [boundary, setBoundary] = useState<FeatureCollection | Feature | null>(
@@ -78,8 +82,13 @@ export default function CaliforniaMap(props: CaliforniaMapProps) {
   const [spots, setSpots] = useState<Spot[]>(spotsProp ?? []);
   const [listOpen, setListOpen] = useState(true);
 
-  const { setMapRef, effectiveSelectedId, selectedSpot, handleSelect } =
+  const { setMapRef: _setMapRef, effectiveSelectedId, selectedSpot, handleSelect } =
     useCaliforniaMap({ spots, selectedSpotId, onSpotSelect });
+
+  const setMapRef = (r: MapRef | null) => {
+    _setMapRef(r);
+    if (r) onMapReady?.(r);
+  };
 
   // Load static data unless caller already provided spots.
   useEffect(() => {
