@@ -10,7 +10,7 @@ const VisionProfileSchema = BoardProfileSchema.omit({
   length_inches: true,
 });
 
-export const VISION_MODEL = 'anthropic/claude-sonnet-4.6';
+export const VISION_MODEL = 'anthropic/claude-haiku-4.5';
 
 export async function runVisionAgent(opts: {
   boards: BoardInput[];

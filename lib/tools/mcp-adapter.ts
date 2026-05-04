@@ -50,13 +50,42 @@ function summarize(value: unknown): string {
   return String(value);
 }
 
+// listTools / callTool can stall indefinitely if the underlying child
+// process is wedged. Cap them so a stuck server raises a real error
+// instead of letting the workflow step run out the clock.
+const MCP_LIST_TOOLS_TIMEOUT_MS = 30_000;
+const MCP_CALL_TOOL_TIMEOUT_MS = 60_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(
+      () => reject(new Error(`${label} timed out after ${ms}ms`)),
+      ms,
+    );
+    promise.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      },
+    );
+  });
+}
+
 export async function mcpToolsForAgent(
   bundle: McpToolBundle,
   agent: AgentName,
   sendEvent: SendEvent,
   rateLimiter?: RateLimiter,
 ): Promise<ToolSet> {
-  const { tools: mcpTools } = await bundle.client.listTools();
+  const { tools: mcpTools } = await withTimeout(
+    bundle.client.listTools(),
+    MCP_LIST_TOOLS_TIMEOUT_MS,
+    `${bundle.source} listTools`,
+  );
   const out: ToolSet = {};
 
   for (const t of mcpTools) {
@@ -94,10 +123,14 @@ export async function mcpToolsForAgent(
           args: normalizedArgs,
         });
         try {
-          const res = await bundle.client.callTool({
-            name,
-            arguments: normalizedArgs,
-          });
+          const res = await withTimeout(
+            bundle.client.callTool({
+              name,
+              arguments: normalizedArgs,
+            }),
+            MCP_CALL_TOOL_TIMEOUT_MS,
+            `${bundle.source}.${name}`,
+          );
           const first = Array.isArray(res.content) ? res.content[0] : null;
           const raw = first && 'text' in first ? (first as { text: string }).text : '';
           let parsed: unknown = raw;

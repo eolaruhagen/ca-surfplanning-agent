@@ -39,7 +39,7 @@ import type {
 } from '@/lib/types';
 
 const TRIP_TTL_SECONDS = 60 * 60 * 24 * 30;
-const DEFAULT_MODEL: SurfPlannerModel = 'anthropic/claude-sonnet-4.6';
+const DEFAULT_MODEL: SurfPlannerModel = 'anthropic/claude-haiku-4.5';
 
 function makeSendEvent(): (event: StreamEvent) => void {
   const writable = getWritable<StreamEvent>();

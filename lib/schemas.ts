@@ -79,7 +79,7 @@ export const PlanRequestSchema = z.object({
   params: TripParamsSchema,
   boards: z.array(BoardInputSchema).min(1).max(4),
   /**
-   * Optional model override per request. Defaults to anthropic/claude-sonnet-4.6
+   * Optional model override per request. Defaults to anthropic/claude-haiku-4.5
    * server-side. UI exposes a typed dropdown over SURF_PLANNER_MODELS.
    */
   model: PlannerModelSchema.optional(),
