@@ -7,7 +7,7 @@ import { getOpenMeteoMcp, getMapsMcp, getFilesystemMcp } from '@/lib/mcp-clients
 export const runtime = 'nodejs';
 // Inline orchestrator path is bounded by this. Workflow path bypasses it
 // because each step gets its own function invocation.
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 const USE_WORKFLOWS = process.env.USE_WORKFLOWS === '1';
 
