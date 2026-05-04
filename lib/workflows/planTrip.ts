@@ -173,6 +173,21 @@ async function plannerStep(
         rateLimiter,
         model,
       });
+      // Fail loudly if the planner committed nothing. Without this guard,
+      // the narrator runs against an empty plan, writes a "no sessions
+      // provided" file, and the user lands on a trip page with no spots.
+      // Better to surface the failure as an error event so they can retry.
+      const totalSessions = result.days.reduce(
+        (n, d) => n + d.sessions.length,
+        0,
+      );
+      if (totalSessions === 0) {
+        throw new Error(
+          'Planner finished without committing any sessions. ' +
+            'This usually means the model ran out of steps before calling record_session, ' +
+            'or the recon report did not surface usable spots. Please retry.',
+        );
+      }
       const handoff = summarizeForHandoff(result.text);
       sendEvent({
         type: 'agent_message',

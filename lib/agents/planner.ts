@@ -6,6 +6,14 @@ import { newRecordedPlan, plannedDays, type RecordedPlan } from '@/lib/tools/rec
 import { ConsultationBudget } from '@/lib/consultation-budget';
 import { runAgent } from './runner';
 
+function computeDayCount(startDate: string, endDate: string): number {
+  // Inclusive day count; both dates are YYYY-MM-DD and parse to UTC midnight.
+  const start = Date.parse(startDate);
+  const end = Date.parse(endDate);
+  if (Number.isNaN(start) || Number.isNaN(end) || end < start) return 1;
+  return Math.round((end - start) / 86_400_000) + 1;
+}
+
 const SYSTEM_PROMPT = `You are the Planner agent on a four-agent California surf trip planning team.
 
 The Recon agent has already discovered candidate spots and scored time windows. Their final report is in the user message below. Your role is to read that report and assemble the day-by-day itinerary.
@@ -90,21 +98,29 @@ export async function runPlannerAgent(opts: {
     `Build the itinerary. Record every session, overnight, and drive.`,
   ].filter(Boolean).join('\n');
 
+  // Step budget must scale with trip size. Per session, the planner needs:
+  // lookup_spot + record_session = 2 steps. Per day boundary it needs:
+  // directions + record_drive + places_search + record_overnight = 4 steps.
+  // Plus a few for initial list_candidate_spots, occasional consult_agent,
+  // and the final summary turn. A fixed cap (was 18) silently truncated
+  // anything bigger than a 3-day single-session trip — the agent ran out
+  // of steps before record_session was ever called and the trip ended up
+  // with `days: []`.
+  const dayCount = computeDayCount(params.start_date, params.end_date);
+  const sessionCount = dayCount * params.sessions_per_day;
+  const computedMaxSteps =
+    sessionCount * 2 + // lookup + record per session
+    Math.max(0, dayCount - 1) * 4 + // drives + overnights between days
+    8; // intro / consults / summary buffer
+  const maxSteps = opts.maxSteps ?? Math.min(computedMaxSteps, 80);
+
   const result = await runAgent({
     agent: 'planner',
     model: opts.model,
     system: SYSTEM_PROMPT,
     prompt,
     tools,
-    // Each step ≈ one model call + (optional) tool call. A 1–3 day, 1–2
-    // sessions/day trip needs roughly: list_candidate_spots + N×lookup_spot
-    // + N×record_session + (N-1)×directions + (N-1)×record_drive +
-    // (N-1)×places_search + (N-1)×record_overnight + final summary.
-    // For the worst common case (3 days × 2 sessions = 6 sessions) that's
-    // ~18 tool calls + 1 summary = 19 steps. Cap at 18 to keep total
-    // wallclock under the planner step budget without strangling normal
-    // trips. Larger itineraries can override via opts.maxSteps.
-    maxSteps: opts.maxSteps ?? 18,
+    maxSteps,
     sendEvent,
   });
 

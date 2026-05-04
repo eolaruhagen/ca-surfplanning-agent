@@ -5,8 +5,10 @@ export const DEFAULT_MODEL = 'anthropic/claude-haiku-4.5';
 
 // Hard wallclock cap on a single agent run. Below the workflow step's 800s
 // ceiling so we surface a clear error from inside the agent instead of being
-// killed silently by the platform with no diagnostic.
-const DEFAULT_WALLCLOCK_MS = 4 * 60 * 1000;
+// killed silently by the platform with no diagnostic. Sized so the planner
+// has room to commit a 6-day × 2-session trip (~50 model+tool steps at
+// ~4-6s each) without truncating.
+const DEFAULT_WALLCLOCK_MS = 6 * 60 * 1000;
 
 /**
  * Test-only seam. The real `streamText` lives on the AI SDK; tests can pass
