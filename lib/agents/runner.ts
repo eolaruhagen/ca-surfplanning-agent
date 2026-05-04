@@ -58,12 +58,13 @@ export async function runAgent(opts: {
     const finalText = await result.text;
     return { text: finalText };
   } catch (err) {
-    const aborted = controller.signal.aborted;
-    const baseMessage = err instanceof Error ? err.message : 'agent run failed';
-    const message = aborted
-      ? `${agent} timed out after ${Math.round(wallclockMs / 1000)}s (likely a stuck model or MCP tool call)`
-      : baseMessage;
-    sendEvent({ type: 'error', agent, message });
+    // Re-throw a clear, agent-named error. The enclosing step is responsible
+    // for emitting the SSE error event so we don't double-emit.
+    if (controller.signal.aborted) {
+      throw new Error(
+        `${agent} timed out after ${Math.round(wallclockMs / 1000)}s (likely a stuck model or MCP tool call)`,
+      );
+    }
     throw err;
   } finally {
     clearTimeout(timeout);

@@ -114,10 +114,18 @@ export default function PlanLivePage() {
       {/* Right — live feed panel + status. */}
       <div className="border-l border-stone-200/70 bg-cream flex flex-col min-h-0">
         <LiveFeed state={state} />
-        {(error || status === "connecting") && (
+        {status === "connecting" && (
           <div className="border-t border-stone-200/70 px-5 py-3 text-xs text-stone-500">
-            {status === "connecting" && "Connecting to planning stream…"}
-            {error && `Stream error: ${error}`}
+            Connecting to planning stream…
+          </div>
+        )}
+        {status === "error" && error && (
+          <div className="border-t-2 border-red-300 bg-red-50 px-5 py-4 text-sm text-red-800">
+            <div className="font-semibold mb-1">Planning session ended with an error</div>
+            <div className="text-red-700 break-words">{error}</div>
+            <div className="mt-3 text-xs text-red-600">
+              The session has been terminated. You can refresh and try again.
+            </div>
           </div>
         )}
       </div>

@@ -80,6 +80,13 @@ export function usePlanStream(request: PlanRequest | null): UsePlanStreamResult 
             setEvents((prev) => [...prev, evt]);
             if (evt.type === "done") {
               setStatus("done");
+            } else if (evt.type === "error") {
+              // Server emitted a session-terminating error. Surface it and
+              // stop processing further events; the stream may close
+              // immediately after this from the workflow rejecting.
+              const label = evt.agent ? `${evt.agent}: ${evt.message}` : evt.message;
+              setError(label);
+              setStatus("error");
             }
           }
         }
