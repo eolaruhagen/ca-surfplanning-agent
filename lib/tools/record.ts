@@ -90,6 +90,18 @@ export function recordTools(
           name: 'record_session',
           summary: `Day ${args.day_number} • ${args.time_window} • ${args.spot_name} (${args.fit_score})`,
         });
+        // Surface the committed spot to the live map immediately. Without
+        // this, pins don't appear until `day_complete` fires from
+        // record_overnight (or the final `done` event arrives) — which
+        // makes it look like the planner is doing nothing for minutes.
+        sendEvent({
+          type: 'data_observed',
+          agent,
+          kind: 'spot',
+          summary: `Day ${args.day_number} · ${args.spot_name} committed (fit ${args.fit_score})`,
+          spot_id: args.spot_id,
+          score: args.fit_score,
+        });
         return { ok: true };
       },
     }),

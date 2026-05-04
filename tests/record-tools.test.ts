@@ -44,6 +44,16 @@ describe('record_session', () => {
     const resultEvent = events.find((e) => e.type === 'tool_result');
     assert.ok(callEvent && resultEvent);
     if (callEvent.type === 'tool_call') assert.equal(callEvent.agent, 'planner');
+
+    // Map needs a data_observed with the spot_id so the pin lights up
+    // immediately on commit, not only after record_overnight.
+    const observed = events.find(
+      (e) => e.type === 'data_observed' && e.kind === 'spot' && e.spot_id === 'rincon',
+    );
+    assert.ok(observed, 'expected data_observed event for committed spot');
+    if (observed?.type === 'data_observed') {
+      assert.equal(observed.score, 87);
+    }
   });
 });
 
