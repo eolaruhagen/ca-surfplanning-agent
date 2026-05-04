@@ -5,7 +5,19 @@ import { reconToolset } from '@/lib/tools';
 import { newRecordedPlan } from '@/lib/tools/record';
 import { runAgent } from './runner';
 
-const SYSTEM_PROMPT = `You are the Recon agent on a four-agent California surf trip planning team.
+function buildSystemPrompt(params: TripParams): string {
+  const today = new Date().toISOString().slice(0, 10);
+  return `You are the Recon agent on a four-agent California surf trip planning team.
+
+CRITICAL DATE CONTEXT — use these EXACT values, never invent dates:
+- Today's date: ${today}
+- Trip start: ${params.start_date}
+- Trip end: ${params.end_date}
+ALL start_date/end_date values you pass to weather_forecast, marine_weather, score_spot_fit, etc. MUST be inside ${params.start_date}..${params.end_date}. Never use any year other than ${params.start_date.slice(0, 4)}.
+` + SYSTEM_PROMPT_BODY;
+}
+
+const SYSTEM_PROMPT_BODY = `
 
 Your role is to discover candidate surf spots inside the trip's geographic bounds and identify which spot+time combinations look strongest given the swell, wind, and tide forecasts.
 
@@ -75,7 +87,7 @@ export async function runReconAgent(opts: {
   const result = await runAgent({
     agent: 'recon',
     model: opts.model,
-    system: SYSTEM_PROMPT,
+    system: buildSystemPrompt(params),
     prompt,
     tools,
     maxSteps: opts.maxSteps ?? 18,

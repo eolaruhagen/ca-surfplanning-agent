@@ -14,7 +14,19 @@ function computeDayCount(startDate: string, endDate: string): number {
   return Math.round((end - start) / 86_400_000) + 1;
 }
 
-const SYSTEM_PROMPT = `You are the Planner agent on a four-agent California surf trip planning team.
+function buildSystemPrompt(params: TripParams): string {
+  const today = new Date().toISOString().slice(0, 10);
+  return `You are the Planner agent on a four-agent California surf trip planning team.
+
+CRITICAL DATE CONTEXT — use these EXACT values, never invent dates:
+- Today's date: ${today}
+- Trip start: ${params.start_date}
+- Trip end: ${params.end_date}
+Every date you commit to record_session and record_overnight MUST fall inside ${params.start_date}..${params.end_date}. Never use any year other than ${params.start_date.slice(0, 4)}.
+` + SYSTEM_PROMPT_BODY;
+}
+
+const SYSTEM_PROMPT_BODY = `
 
 The Recon agent has already discovered candidate spots and scored time windows. Their final report is in the user message below. Your role is to read that report and assemble the day-by-day itinerary.
 
@@ -78,6 +90,7 @@ export async function runPlannerAgent(opts: {
     rateLimiter: opts.rateLimiter,
     consultationBudget,
     model: opts.model,
+    tripDates: { startDate: params.start_date, endDate: params.end_date },
   });
 
   const prompt = [
@@ -117,7 +130,7 @@ export async function runPlannerAgent(opts: {
   const result = await runAgent({
     agent: 'planner',
     model: opts.model,
-    system: SYSTEM_PROMPT,
+    system: buildSystemPrompt(params),
     prompt,
     tools,
     maxSteps,

@@ -25,6 +25,11 @@ export type ConsultationMcpClients = {
   meteoMcp?: Client | null;
 };
 
+export type TripDateContext = {
+  startDate: string; // YYYY-MM-DD
+  endDate: string; // YYYY-MM-DD
+};
+
 type RunAgentLike = (opts: {
   agent: AgentName;
   model?: string;
@@ -42,6 +47,8 @@ export type RunConsultationOptions = {
   question: string;
   /** Extra context the consultee needs to answer (trip params, prior findings). */
   context?: string;
+  /** Trip dates to anchor weather queries — without this, models hallucinate years. */
+  tripDates?: TripDateContext;
   sendEvent: SendEvent;
   model?: string;
   mcpClients?: ConsultationMcpClients;
@@ -54,8 +61,21 @@ export type RunConsultationOptions = {
 
 export type ConsultationResult = { answer: string };
 
-const SYSTEM_PROMPT = (consultee: AgentName, initiator: AgentName) =>
-  `You are ${consultee}, called in for a focused consultation by ${initiator}. Answer the question concisely (≤200 words) using your tools. Do not record sessions or write files.`;
+const SYSTEM_PROMPT = (
+  consultee: AgentName,
+  initiator: AgentName,
+  tripDates?: TripDateContext,
+) => {
+  const today = new Date().toISOString().slice(0, 10);
+  const dateBlock = tripDates
+    ? `\n\nCRITICAL DATE CONTEXT — use these EXACT values, never invent dates:\n` +
+      `- Today's date: ${today}\n` +
+      `- Trip start: ${tripDates.startDate}\n` +
+      `- Trip end: ${tripDates.endDate}\n` +
+      `When calling weather/marine tools, ALL start_date and end_date values MUST be inside ${tripDates.startDate}..${tripDates.endDate}. Never use any year other than ${tripDates.startDate.slice(0, 4)}.`
+    : '';
+  return `You are ${consultee}, called in for a focused consultation by ${initiator}. Answer the question concisely (≤200 words) using your tools. Do not record sessions or write files.${dateBlock}`;
+};
 
 async function buildConsulteeTools(
   consultee: 'recon' | 'narrator',
@@ -144,7 +164,7 @@ export async function runConsultation(
     const result = await runner({
       agent: consultee,
       model,
-      system: SYSTEM_PROMPT(consultee, initiator),
+      system: SYSTEM_PROMPT(consultee, initiator, opts.tripDates),
       prompt,
       tools,
       maxSteps: 5,

@@ -10,6 +10,7 @@ import { mcpToolsForAgent, type McpToolBundle } from './mcp-adapter';
 import { consultTools } from './consult';
 import type { RateLimiter } from '@/lib/rate-limiter';
 import type { ConsultationBudget } from '@/lib/consultation-budget';
+import type { TripDateContext } from '@/lib/agents/consultation';
 
 export type AgentToolContext = {
   agent: AgentName;
@@ -23,6 +24,8 @@ export type AgentToolContext = {
   consultationBudget?: ConsultationBudget;
   /** Model used by spawned consultee mini-runs. */
   model?: string;
+  /** Trip dates so spawned consultees don't hallucinate years. */
+  tripDates?: TripDateContext;
 };
 
 export async function reconToolset(ctx: AgentToolContext): Promise<ToolSet> {
@@ -61,6 +64,7 @@ export async function plannerToolset(ctx: AgentToolContext): Promise<ToolSet> {
         mcpClients: { meteoMcp: ctx.meteoMcp },
         rateLimiter: ctx.rateLimiter,
         model: ctx.model,
+        tripDates: ctx.tripDates,
       })
     : ({} as ToolSet);
   return {

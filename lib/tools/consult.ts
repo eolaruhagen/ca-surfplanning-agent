@@ -13,6 +13,7 @@ import type { RateLimiter } from '@/lib/rate-limiter';
 import {
   runConsultation,
   type ConsultationMcpClients,
+  type TripDateContext,
 } from '@/lib/agents/consultation';
 
 export type ConsultToolContext = {
@@ -22,6 +23,7 @@ export type ConsultToolContext = {
   mcpClients?: ConsultationMcpClients;
   rateLimiter?: RateLimiter;
   model?: string;
+  tripDates?: TripDateContext;
 };
 
 export function consultTools(ctx: ConsultToolContext): ToolSet {
@@ -69,6 +71,7 @@ export function consultTools(ctx: ConsultToolContext): ToolSet {
             model: ctx.model,
             mcpClients: ctx.mcpClients,
             rateLimiter: ctx.rateLimiter,
+            tripDates: ctx.tripDates,
           });
           ctx.sendEvent({
             type: 'tool_result',
