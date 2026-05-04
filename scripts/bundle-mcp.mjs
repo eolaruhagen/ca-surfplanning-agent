@@ -20,7 +20,13 @@
  */
 
 import { spawn } from 'node:child_process';
-import { mkdirSync, rmSync, existsSync, statSync } from 'node:fs';
+import {
+  mkdirSync,
+  rmSync,
+  existsSync,
+  statSync,
+  copyFileSync,
+} from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -89,6 +95,23 @@ async function main() {
     }
     const sizeMB = (statSync(indexPath).size / 1024 / 1024).toFixed(2);
     console.log(`[bundle-mcp]   → ${target.name}/index.js (${sizeMB}MB)`);
+
+    // Some bundled servers read their own package.json at runtime
+    // (e.g. open-meteo: `readFileSync(join(__dirname, '..', 'package.json'))`
+    // for the version banner). ncc inlines code but not data files, so we
+    // copy the source package.json to <bundle>/../package.json. We pin the
+    // copy at OUT_ROOT/package.json — open-meteo is the only consumer; if
+    // another MCP added a similar lookup later we'd restructure to per-MCP
+    // parent dirs.
+    if (target.name === 'open-meteo') {
+      const src = join(REPO_ROOT, dirname(target.entry), '..', 'package.json');
+      const dst = join(OUT_ROOT, 'package.json');
+      if (!existsSync(src)) {
+        throw new Error(`Source package.json missing for ${target.name}: ${src}`);
+      }
+      copyFileSync(src, dst);
+      console.log(`[bundle-mcp]   → bundled-mcp/package.json (for ${target.name} version lookup)`);
+    }
   }
 
   console.log('[bundle-mcp] All MCP server bundles built.');
