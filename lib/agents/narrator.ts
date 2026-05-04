@@ -82,7 +82,11 @@ export async function runNarratorAgent(opts: {
     system: buildSystemPrompt(EXPORTS_DIR),
     prompt,
     tools,
-    maxSteps: opts.maxSteps ?? 12,
+    // Narrator writes 3 files (trip-summary.md, route.geojson, sessions.ics)
+    // + a final summary message = 4 tool calls + 1 model summary turn = 5
+    // steps minimum. Cap at 8 with a small buffer; anything more is the
+    // model retrying or wandering.
+    maxSteps: opts.maxSteps ?? 8,
     sendEvent,
   });
 

@@ -6,7 +6,7 @@ export const DEFAULT_MODEL = 'anthropic/claude-haiku-4.5';
 // Hard wallclock cap on a single agent run. Below the workflow step's 800s
 // ceiling so we surface a clear error from inside the agent instead of being
 // killed silently by the platform with no diagnostic.
-const DEFAULT_WALLCLOCK_MS = 5 * 60 * 1000;
+const DEFAULT_WALLCLOCK_MS = 4 * 60 * 1000;
 
 /**
  * Test-only seam. The real `streamText` lives on the AI SDK; tests can pass
@@ -23,19 +23,23 @@ export async function runAgent(opts: {
   tools: ToolSet;
   maxSteps: number;
   sendEvent: SendEvent;
-  /** Wallclock cap in ms; defaults to 5 minutes. */
+  /** Wallclock cap in ms; defaults to 4 minutes. */
   wallclockMs?: number;
   /** Optional override for tests. Defaults to the real `streamText`. */
   streamTextImpl?: StreamTextLike;
 }): Promise<{ text: string }> {
-  const { agent, sendEvent } = opts;
+  const { agent } = opts;
   const impl = opts.streamTextImpl ?? streamText;
   const wallclockMs = opts.wallclockMs ?? DEFAULT_WALLCLOCK_MS;
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), wallclockMs);
 
-  try {
+  // We can't trust streamText's abortSignal alone — empirically, when the AI
+  // gateway hangs after a tool result, neither the abort nor the iterator
+  // exits, so the wallclock budget never actually trips. Race the consume
+  // promise against an external timeout that *throws* so the step always
+  // fails fast with a real error event.
+  const consume = async (): Promise<string> => {
     const result = impl({
       model: opts.model ?? DEFAULT_MODEL,
       system: opts.system,
@@ -46,7 +50,7 @@ export async function runAgent(opts: {
       onStepFinish: (step) => {
         const text = (step as { text?: string }).text;
         if (text && text.trim().length > 0) {
-          sendEvent({ type: 'agent_thinking', agent, text });
+          opts.sendEvent({ type: 'agent_thinking', agent, text });
         }
       },
     });
@@ -54,19 +58,25 @@ export async function runAgent(opts: {
     for await (const _ of result.textStream) {
       void _;
     }
+    return await result.text;
+  };
 
-    const finalText = await result.text;
-    return { text: finalText };
-  } catch (err) {
-    // Re-throw a clear, agent-named error. The enclosing step is responsible
-    // for emitting the SSE error event so we don't double-emit.
-    if (controller.signal.aborted) {
-      throw new Error(
-        `${agent} timed out after ${Math.round(wallclockMs / 1000)}s (likely a stuck model or MCP tool call)`,
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(
+        new Error(
+          `${agent} timed out after ${Math.round(wallclockMs / 1000)}s ` +
+            `(likely a stuck model or MCP tool call)`,
+        ),
       );
-    }
-    throw err;
+    }, wallclockMs);
+  });
+
+  try {
+    return { text: await Promise.race([consume(), timeoutPromise]) };
   } finally {
-    clearTimeout(timeout);
+    if (timer) clearTimeout(timer);
   }
 }
