@@ -46,26 +46,68 @@ async function runViaWorkflow(input: ReturnType<typeof PlanRequestSchema.parse>)
   const sse = new ReadableStream({
     async start(controller) {
       const encoder = new TextEncoder();
+      const enqueueEvent = (e: StreamEvent) => {
+        const validated = safeValidate(e);
+        if (validated) {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(validated)}\n\n`));
+        }
+      };
+
+      // Heartbeat — SSE comment lines are ignored by browsers but keep the
+      // connection alive across silent stretches (e.g. while a step thinks
+      // for a minute without writing). Without this, intermediate proxies
+      // can sever an idle stream and the client sees an early close.
+      const heartbeat = setInterval(() => {
+        try {
+          controller.enqueue(encoder.encode(`: ping\n\n`));
+        } catch {}
+      }, 15_000);
+
+      // Track whether a step already emitted a `done` or `error` event.
+      // Workflow steps emit events via getWritable() which is async — if a
+      // step rejects, the runtime can close the writable before the queued
+      // event flushes through. We tail-check `run.returnValue` after the
+      // reader closes so a silent rejection still surfaces to the client.
+      let sawTerminator = false;
+
       const reader = (run.readable as ReadableStream<StreamEvent>).getReader();
       try {
         while (true) {
           const { value, done } = await reader.read();
           if (done) break;
           if (!value) continue;
-          const validated = safeValidate(value);
-          if (validated) {
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify(validated)}\n\n`));
+          if (value.type === 'done' || value.type === 'error') {
+            sawTerminator = true;
           }
+          enqueueEvent(value);
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : 'workflow stream error';
-        const errEvent: StreamEvent = { type: 'error', message };
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(errEvent)}\n\n`));
-      } finally {
-        try {
-          controller.close();
-        } catch {}
+        enqueueEvent({ type: 'error', message });
+        sawTerminator = true;
       }
+
+      // Safety net: if the workflow rejected and the reject reason never
+      // reached the client through the writable channel, surface it now.
+      if (!sawTerminator) {
+        try {
+          await run.returnValue;
+          enqueueEvent({
+            type: 'error',
+            message:
+              'Workflow finished without emitting a final event. The session ended unexpectedly — please retry.',
+          });
+        } catch (err) {
+          const message =
+            err instanceof Error ? err.message : 'workflow rejected without details';
+          enqueueEvent({ type: 'error', message: `workflow failed: ${message}` });
+        }
+      }
+
+      clearInterval(heartbeat);
+      try {
+        controller.close();
+      } catch {}
     },
   });
 
