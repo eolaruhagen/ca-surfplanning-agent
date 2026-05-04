@@ -4,6 +4,7 @@ import type { AgentName, Phase } from "@/lib/types";
 import { AGENT_COLOR, AGENT_LABEL, agentIcon } from "../agent-icons";
 import type { LiveFeedState, AgentDerivedState, ToolCallState } from "./hook";
 import ToolChip from "./tool-chip";
+import Md from "./md";
 
 const SPECIALIST_ORDER: AgentName[] = ["vision", "recon", "planner", "narrator"];
 const PHASE_OWNER: Record<Phase, AgentName> = {
@@ -263,13 +264,13 @@ function ActiveAgentPanel({
                 color: "#292524",
               }}
             >
-              {state.thinkingText}
+              <Md>{state.thinkingText}</Md>
             </div>
           )}
 
           {state.summary && (
             <div style={{ fontSize: 12, color: "#57534e" }}>
-              <strong>Summary:</strong> {state.summary}
+              <strong>Summary:</strong> <Md style={{ display: "inline" }}>{state.summary}</Md>
             </div>
           )}
 
@@ -293,7 +294,7 @@ function ActiveAgentPanel({
                 <div key={`${obs.agent}-${obs.kind}-${obs.index}`} style={{ fontSize: 12, color: "#57534e" }}>
                   <strong style={{ color: AGENT_COLOR[obs.agent] }}>{AGENT_LABEL[obs.agent]}</strong>
                   {": "}
-                  {obs.summary}
+                  <Md style={{ display: "inline" }}>{obs.summary}</Md>
                 </div>
               ))}
             </div>
@@ -310,7 +311,7 @@ function ActiveAgentPanel({
                   {" → "}
                   <strong style={{ color: AGENT_COLOR[m.to] }}>{AGENT_LABEL[m.to]}</strong>
                   {": "}
-                  {m.content}
+                  <Md style={{ display: "inline" }}>{m.content}</Md>
                 </div>
               ))}
             </div>
