@@ -96,7 +96,15 @@ export async function runPlannerAgent(opts: {
     system: SYSTEM_PROMPT,
     prompt,
     tools,
-    maxSteps: opts.maxSteps ?? 30,
+    // Each step ≈ one model call + (optional) tool call. A 1–3 day, 1–2
+    // sessions/day trip needs roughly: list_candidate_spots + N×lookup_spot
+    // + N×record_session + (N-1)×directions + (N-1)×record_drive +
+    // (N-1)×places_search + (N-1)×record_overnight + final summary.
+    // For the worst common case (3 days × 2 sessions = 6 sessions) that's
+    // ~18 tool calls + 1 summary = 19 steps. Cap at 18 to keep total
+    // wallclock under the planner step budget without strangling normal
+    // trips. Larger itineraries can override via opts.maxSteps.
+    maxSteps: opts.maxSteps ?? 18,
     sendEvent,
   });
 

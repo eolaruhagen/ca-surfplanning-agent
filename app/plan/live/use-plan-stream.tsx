@@ -36,6 +36,13 @@ export function usePlanStream(request: PlanRequest | null): UsePlanStreamResult 
       setError(null);
       setStatus("connecting");
 
+      // Track whether we ever saw a terminator event (`done` or `error`).
+      // If the stream closes without one, the route function probably hit
+      // its maxDuration cap or the workflow rejected silently — surface
+      // that to the user instead of leaving them on a frozen "streaming"
+      // view forever.
+      let sawTerminator = false;
+
       try {
         const res = await fetch("/api/plan", {
           method: "POST",
@@ -79,16 +86,24 @@ export function usePlanStream(request: PlanRequest | null): UsePlanStreamResult 
             const evt = parsed.data;
             setEvents((prev) => [...prev, evt]);
             if (evt.type === "done") {
+              sawTerminator = true;
               setStatus("done");
             } else if (evt.type === "error") {
-              // Server emitted a session-terminating error. Surface it and
-              // stop processing further events; the stream may close
-              // immediately after this from the workflow rejecting.
+              sawTerminator = true;
               const label = evt.agent ? `${evt.agent}: ${evt.message}` : evt.message;
               setError(label);
               setStatus("error");
             }
           }
+        }
+
+        if (!cancelled && !sawTerminator) {
+          setError(
+            "Connection to the planning server closed before the trip finished. " +
+              "This usually means the request hit the platform's max duration. " +
+              "Try a shorter trip or fewer sessions per day.",
+          );
+          setStatus("error");
         }
       } catch (err) {
         if (controller.signal.aborted) return;

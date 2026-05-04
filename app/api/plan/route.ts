@@ -5,9 +5,14 @@ import { planTripWorkflow } from '@/lib/workflows/planTrip';
 import { getOpenMeteoMcp, getMapsMcp, getFilesystemMcp } from '@/lib/mcp-clients';
 
 export const runtime = 'nodejs';
-// Inline orchestrator path is bounded by this. Workflow path bypasses it
-// because each step gets its own function invocation.
-export const maxDuration = 300;
+// Caps how long the SSE response can stay open. The workflow path runs
+// each step in its own function invocation (up to 800s each), but THIS
+// route is the function holding the SSE pipe to the browser — if it dies
+// before the workflow emits `done`, the client never navigates and the
+// live view freezes on the last event it saw. Sized to comfortably
+// outlast a vision + recon + planner + narrator sequence (~5–7 min in
+// the worst case observed in prod).
+export const maxDuration = 800;
 
 const USE_WORKFLOWS = process.env.USE_WORKFLOWS === '1';
 
