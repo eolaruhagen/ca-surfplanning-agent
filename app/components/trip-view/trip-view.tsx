@@ -118,10 +118,10 @@ export default function TripView({ trip }: TripViewProps) {
           source: "mapbox-dem",
           paint: {
             "hillshade-illumination-direction": 335,
-            "hillshade-exaggeration": 0.45,
-            "hillshade-shadow-color": "rgba(28, 25, 23, 0.22)",
-            "hillshade-highlight-color": "rgba(180, 165, 130, 0.18)",
-            "hillshade-accent-color": "rgba(120, 113, 108, 0.12)",
+            "hillshade-exaggeration": 0.6,
+            "hillshade-shadow-color": "rgba(60, 42, 28, 0.30)",
+            "hillshade-highlight-color": "rgba(214, 188, 138, 0.26)",
+            "hillshade-accent-color": "rgba(140, 120, 96, 0.18)",
           },
         });
       }
@@ -256,8 +256,8 @@ export default function TripView({ trip }: TripViewProps) {
               id="ca-fill-tint"
               type="fill"
               paint={{
-                "fill-color": "#f0e9d8",
-                "fill-opacity": 0.18,
+                "fill-color": "#ecdfc5",
+                "fill-opacity": 0.26,
               }}
             />
             <Layer

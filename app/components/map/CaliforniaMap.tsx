@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Map as MapGL,
   Marker,
@@ -8,7 +8,7 @@ import {
   Source,
   Layer,
 } from "react-map-gl/mapbox";
-import type { MapRef } from "react-map-gl/mapbox";
+import type { MapEvent, MapRef } from "react-map-gl/mapbox";
 import type { Feature, FeatureCollection } from "geojson";
 
 import {
@@ -90,6 +90,40 @@ export default function CaliforniaMap(props: CaliforniaMapProps) {
     _setMapRef(r);
     if (r) onMapReady?.(r);
   };
+
+  // Add terrain DEM + warm hillshade once the basemap style finishes loading.
+  // Kept additive so a parallel agent can layer onClick / detail logic without
+  // colliding on the same useEffect.
+  const handleMapLoad = useCallback((e: MapEvent) => {
+    const m = e.target;
+    try {
+      if (!m.getSource("mapbox-dem")) {
+        m.addSource("mapbox-dem", {
+          type: "raster-dem",
+          url: "mapbox://mapbox.mapbox-terrain-dem-v1",
+          tileSize: 512,
+          maxzoom: 14,
+        });
+      }
+      m.setTerrain({ source: "mapbox-dem", exaggeration: 1.0 });
+      if (!m.getLayer("ca-hillshade")) {
+        m.addLayer({
+          id: "ca-hillshade",
+          type: "hillshade",
+          source: "mapbox-dem",
+          paint: {
+            "hillshade-illumination-direction": 335,
+            "hillshade-exaggeration": 0.6,
+            "hillshade-shadow-color": "rgba(60, 42, 28, 0.30)",
+            "hillshade-highlight-color": "rgba(214, 188, 138, 0.26)",
+            "hillshade-accent-color": "rgba(140, 120, 96, 0.18)",
+          },
+        });
+      }
+    } catch (err) {
+      console.warn("terrain setup failed", err);
+    }
+  }, []);
 
   // Load static data unless caller already provided spots.
   useEffect(() => {
@@ -186,6 +220,7 @@ export default function CaliforniaMap(props: CaliforniaMapProps) {
         maxBounds={CA_BOUNDS}
         mapStyle="mapbox://styles/mapbox/light-v11"
         style={{ width: "100%", height: "100%" }}
+        onLoad={handleMapLoad}
       >
         <NavigationControl position="bottom-right" showCompass={false} />
 
@@ -210,6 +245,16 @@ export default function CaliforniaMap(props: CaliforniaMapProps) {
             type="geojson"
             data={boundary as FeatureCollection}
           >
+            {/* Warm sand tint over CA land — keeps land readable on the
+                light basemap and harmonizes with the hillshade highlights. */}
+            <Layer
+              id="ca-fill-tint"
+              type="fill"
+              paint={{
+                "fill-color": "#ecdfc5",
+                "fill-opacity": 0.26,
+              }}
+            />
             <Layer
               id="ca-outline-line"
               type="line"
