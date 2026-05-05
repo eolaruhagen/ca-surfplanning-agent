@@ -1,8 +1,9 @@
-import { PlanRequestSchema, StreamEventSchema } from '@/lib/schemas';
-import type { StreamEvent } from '@/lib/types';
+import { PlanRequestSchema, StreamEventSchema, TripSchema } from '@/lib/schemas';
+import type { StreamEvent, Trip } from '@/lib/types';
 import { runPlanTrip } from '@/lib/agents/orchestrator';
 import { planTripWorkflow } from '@/lib/workflows/planTrip';
 import { getOpenMeteoMcp, getMapsMcp, getFilesystemMcp } from '@/lib/mcp-clients';
+import { kv } from '@/lib/kv';
 
 export const runtime = 'nodejs';
 // Caps how long the SSE response can stay open. The workflow path runs
@@ -87,16 +88,34 @@ async function runViaWorkflow(input: ReturnType<typeof PlanRequestSchema.parse>)
         sawTerminator = true;
       }
 
-      // Safety net: if the workflow rejected and the reject reason never
-      // reached the client through the writable channel, surface it now.
+      // Safety net: events from `getWritable()` go through a queue and can
+      // get dropped on step transitions. If we never saw a terminator, ask
+      // the workflow for its return value and recover. If the workflow
+      // succeeded, fetch the saved trip from KV and emit a synthetic
+      // `done` so the client navigates. If it rejected, surface the real
+      // reason as an error event.
       if (!sawTerminator) {
         try {
-          await run.returnValue;
-          enqueueEvent({
-            type: 'error',
-            message:
-              'Workflow finished without emitting a final event. The session ended unexpectedly — please retry.',
-          });
+          const result = (await run.returnValue) as { trip_id?: string } | undefined;
+          const tripId = result?.trip_id;
+          if (tripId) {
+            const raw = await kv.get(`trip:${tripId}`);
+            const parsed = raw ? TripSchema.safeParse(raw) : null;
+            if (parsed && parsed.success) {
+              enqueueEvent({ type: 'done', trip_id: tripId, trip: parsed.data as Trip });
+            } else {
+              enqueueEvent({
+                type: 'error',
+                message: `Workflow finished but trip ${tripId} could not be loaded from storage.`,
+              });
+            }
+          } else {
+            enqueueEvent({
+              type: 'error',
+              message:
+                'Workflow finished without producing a trip id. The session ended unexpectedly — please retry.',
+            });
+          }
         } catch (err) {
           const message =
             err instanceof Error ? err.message : 'workflow rejected without details';
