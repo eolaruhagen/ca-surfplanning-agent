@@ -49,6 +49,12 @@ export type CaliforniaMapProps = {
   header?: React.ReactNode;
   /** Called once when the Mapbox MapRef is ready. Use for imperative flyTo / terrain. */
   onMapReady?: (map: MapRef) => void;
+  /**
+   * Fires whenever the user clicks a spot marker. Independent of the
+   * controlled-selection contract (`onSpotSelect`) — wire this to drive a
+   * sibling detail panel without taking over selection state.
+   */
+  onSpotClick?: (spotId: string) => void;
 };
 
 const MAPBOX_TOKEN =
@@ -75,6 +81,7 @@ export default function CaliforniaMap(props: CaliforniaMapProps) {
     showSpotDetail = true,
     header,
     onMapReady,
+    onSpotClick,
   } = props;
 
   const [boundary, setBoundary] = useState<FeatureCollection | Feature | null>(
@@ -307,6 +314,7 @@ export default function CaliforniaMap(props: CaliforniaMapProps) {
               onClick={(e) => {
                 e.originalEvent.stopPropagation();
                 handleSelect(s.id);
+                onSpotClick?.(s.id);
               }}
             >
               <div

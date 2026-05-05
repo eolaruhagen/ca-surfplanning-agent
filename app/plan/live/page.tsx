@@ -10,6 +10,8 @@ import { PlanRequestSchema } from "@/lib/schemas";
 import type { MapOverlay } from "@/lib/spots";
 import LiveFeed from "@/app/components/live-feed/live-feed";
 import { useLiveFeed } from "@/app/components/live-feed/hook";
+import SpotDetailPanel from "@/app/components/spot-detail/spot-detail-panel";
+import { useSpotSelection } from "@/app/components/spot-detail/hook";
 import { usePlanStream } from "./use-plan-stream";
 
 // Mapbox needs `window`, so the map is loaded client-side only.
@@ -50,6 +52,7 @@ export default function PlanLivePage() {
 
   const { events, error, status } = usePlanStream(request);
   const state = useLiveFeed(events, { pulseTtlMs: 2000 });
+  const { selectedSpot, selectSpot, clearSelection } = useSpotSelection();
 
   useEffect(() => {
     const last = events[events.length - 1];
@@ -103,10 +106,12 @@ export default function PlanLivePage() {
     <div className="h-screen w-screen overflow-hidden grid grid-cols-[1.2fr_1fr] bg-cream">
       {/* Left — map painted by live overlay. */}
       <div className="relative">
+        <SpotDetailPanel spot={selectedSpot} onClose={clearSelection} />
         <CaliforniaMap
           overlay={overlay}
           showSpotList={false}
           showSpotDetail={false}
+          onSpotClick={selectSpot}
           header={header}
         />
       </div>
