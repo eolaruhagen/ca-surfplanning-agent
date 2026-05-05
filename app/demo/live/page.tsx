@@ -5,6 +5,8 @@ import { useMemo } from "react";
 
 import LiveFeed from "@/app/components/live-feed/live-feed";
 import { useLiveFeed } from "@/app/components/live-feed/hook";
+import SpotDetailPanel from "@/app/components/spot-detail/spot-detail-panel";
+import { useSpotSelection } from "@/app/components/spot-detail/hook";
 import { DEMO_LOOP_MS, DEMO_ROUTE_GEOJSON, useDemoStream } from "./use-demo-stream";
 import type { MapOverlay } from "@/lib/spots";
 
@@ -51,14 +53,18 @@ export default function DemoLivePage() {
 
   const progressPct = Math.min(100, (elapsedMs / DEMO_LOOP_MS) * 100);
 
+  const { selectedSpot, selectSpot, clearSelection } = useSpotSelection();
+
   return (
     <div className="h-screen w-screen overflow-hidden grid grid-cols-[1.2fr_1fr] bg-cream">
       {/* Left — the real map, painted by the same overlay it would receive in prod. */}
       <div className="relative">
+        <SpotDetailPanel spot={selectedSpot} onClose={clearSelection} />
         <CaliforniaMap
           overlay={overlay}
           showSpotList={false}
           showSpotDetail={false}
+          onSpotClick={selectSpot}
           header={
             <div className="text-display text-2xl text-stone-900 leading-tight">
               <span className="italic">Live demo</span>{" "}
