@@ -16,11 +16,24 @@ import { buildCaliforniaMask } from "@/app/components/map/buildMask";
 import { extractRouteFeatures } from "./helpers/route-utils";
 import { shouldDoInitialFly } from "./helpers/auto-advance";
 import { useTripView } from "./hook";
+import { useRoadDirections } from "./use-road-directions";
 import SpeechBubble from "./speech-bubble";
 import DayRail from "./day-rail";
 import NavControls from "./nav-controls";
 import PitchToggle from "./pitch-toggle";
 import SessionMarker from "./session-marker";
+
+// Soft, beach-trip-y palette cycled per leg so adjacent legs read as distinct.
+const LEG_COLORS = [
+  "#e8b4b8",
+  "#9ec5e0",
+  "#c8e0a8",
+  "#f4d3a3",
+  "#c5b6e0",
+  "#a8d8c5",
+  "#e8c8a4",
+  "#b8c8d8",
+] as const;
 
 type TripViewProps = {
   trip: Trip;
@@ -78,6 +91,22 @@ export default function TripView({ trip }: TripViewProps) {
     () => extractRouteFeatures(trip.route_geojson),
     [trip.route_geojson],
   );
+
+  const roadWaypoints = useMemo<Array<[number, number]>>(() => {
+    const wps: Array<[number, number]> = [];
+    const push = (c: [number, number] | undefined | null) => {
+      if (c && Number.isFinite(c[0]) && Number.isFinite(c[1])) wps.push(c);
+    };
+    push(trip.params.start_point);
+    for (const day of trip.days) {
+      for (const s of day.sessions) push(s.spot_coords);
+      if (day.overnight) push(day.overnight.coords);
+    }
+    push(trip.params.end_point);
+    return wps;
+  }, [trip]);
+
+  const roadDirections = useRoadDirections(roadWaypoints, MAPBOX_TOKEN);
 
   const flyToCoords = useCallback(
     (coords: [number, number] | undefined, pitch: number) => {
@@ -272,31 +301,70 @@ export default function TripView({ trip }: TripViewProps) {
           </Source>
         )}
 
-        {/* Trip driving route — casing + stroke */}
-        {routeFC && (
-          <Source id="trip-route" type="geojson" data={routeFC}>
-            <Layer
-              id="trip-route-casing"
-              type="line"
-              paint={{
-                "line-color": "#ffffff",
-                "line-width": 6,
-                "line-opacity": 0.95,
-              }}
-              layout={{ "line-cap": "round", "line-join": "round" }}
-            />
-            <Layer
-              id="trip-route-line"
-              type="line"
-              paint={{
-                "line-color": "#1c1917",
-                "line-width": 3,
-                "line-opacity": 0.9,
-              }}
-              layout={{ "line-cap": "round", "line-join": "round" }}
-            />
-          </Source>
-        )}
+        {/* Trip driving route — per-leg pastel colors when road geometry is
+            ready; falls back to straight-line geojson while loading or on error
+            so the user never sees a blank map. */}
+        {roadDirections.status === "ready" && roadDirections.legs.length > 0
+          ? roadDirections.legs.map((leg) => {
+              const color = LEG_COLORS[leg.index % LEG_COLORS.length];
+              return (
+                <Source
+                  key={`trip-leg-${leg.index}`}
+                  id={`trip-leg-${leg.index}`}
+                  type="geojson"
+                  data={{
+                    type: "Feature",
+                    properties: { kind: "leg", index: leg.index },
+                    geometry: leg.geometry,
+                  }}
+                >
+                  <Layer
+                    id={`trip-leg-${leg.index}-casing`}
+                    type="line"
+                    paint={{
+                      "line-color": "#ffffff",
+                      "line-width": 6,
+                      "line-opacity": 0.95,
+                    }}
+                    layout={{ "line-cap": "round", "line-join": "round" }}
+                  />
+                  <Layer
+                    id={`trip-leg-${leg.index}-stroke`}
+                    type="line"
+                    paint={{
+                      "line-color": color,
+                      "line-width": 3,
+                      "line-opacity": 0.95,
+                    }}
+                    layout={{ "line-cap": "round", "line-join": "round" }}
+                  />
+                </Source>
+              );
+            })
+          : routeFC && (
+              <Source id="trip-route" type="geojson" data={routeFC}>
+                <Layer
+                  id="trip-route-casing"
+                  type="line"
+                  paint={{
+                    "line-color": "#ffffff",
+                    "line-width": 6,
+                    "line-opacity": 0.95,
+                  }}
+                  layout={{ "line-cap": "round", "line-join": "round" }}
+                />
+                <Layer
+                  id="trip-route-line"
+                  type="line"
+                  paint={{
+                    "line-color": "#1c1917",
+                    "line-width": 3,
+                    "line-opacity": 0.9,
+                  }}
+                  layout={{ "line-cap": "round", "line-join": "round" }}
+                />
+              </Source>
+            )}
 
         {/* Numbered session pins */}
         {flatSessions.map((fs) => {
